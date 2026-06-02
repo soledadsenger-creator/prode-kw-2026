@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  collection, doc, getDoc, getDocs, setDoc, onSnapshot, updateDoc
-} from "firebase/firestore";
+import { doc, getDoc, collection, setDoc, onSnapshot, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 // ============================================================
@@ -11,56 +9,29 @@ const ADMIN_USER = "admin";
 const ADMIN_PASS = "garykeller";
 
 const POINT_VALUES = {
-  resultado_exacto: 5,
-  ganador_correcto: 2,
-  captacion_simple: 5,
-  captacion_exclusiva: 10,
-  reserva_venta: 15,
-  cierre_1_punta: 25,
-  cierre_2_puntas: 50,
-  reserva_alquiler: 8,
-  firma_alquiler: 15,
-  breakthrough: 10,
-  capacitacion: 5,
-  plan_411: 5,
-  calculadora_gci: 5,
-  guiones: 10,
+  resultado_exacto: 5, ganador_correcto: 2,
+  captacion_simple: 5, captacion_exclusiva: 10,
+  reserva_venta: 15, cierre_1_punta: 25, cierre_2_puntas: 50,
+  reserva_alquiler: 8, firma_alquiler: 15,
+  breakthrough: 10, capacitacion: 5, plan_411: 5, calculadora_gci: 5, guiones: 10,
 };
 
 const LOGROS_LABELS = {
-  captacion_simple: "📋 Captación simple",
-  captacion_exclusiva: "⭐ Captación exclusiva",
-  reserva_venta: "🤝 Reserva venta",
-  cierre_1_punta: "🏆 Cierre 1 punta",
-  cierre_2_puntas: "🏆🏆 Cierre 2 puntas",
-  reserva_alquiler: "🔑 Reserva alquiler",
-  firma_alquiler: "📝 Firma alquiler",
-  breakthrough: "🚀 Breakthrough",
-  capacitacion: "📚 Capacitación en oficina",
-  plan_411: "📅 Plan 411",
-  calculadora_gci: "💰 Calculadora GCI",
-  guiones: "🎯 Guiones",
+  captacion_simple: "📋 Captación simple", captacion_exclusiva: "⭐ Captación exclusiva",
+  reserva_venta: "🤝 Reserva venta", cierre_1_punta: "🏆 Cierre 1 punta",
+  cierre_2_puntas: "🏆🏆 Cierre 2 puntas", reserva_alquiler: "🔑 Reserva alquiler",
+  firma_alquiler: "📝 Firma alquiler", breakthrough: "🚀 Breakthrough",
+  capacitacion: "📚 Capacitación en oficina", plan_411: "📅 Plan 411",
+  calculadora_gci: "💰 Calculadora GCI", guiones: "🎯 Guiones",
 };
 
 const ONCE_PER_YEAR = ["breakthrough", "plan_411", "calculadora_gci", "guiones"];
 const INMO_KEYS = ["captacion_simple","captacion_exclusiva","reserva_venta","cierre_1_punta","cierre_2_puntas","reserva_alquiler","firma_alquiler"];
 const DEV_KEYS = ["breakthrough","capacitacion","plan_411","calculadora_gci","guiones"];
 
-const OFFICIAL_GROUPS = {
-  "Grupo A": ["México","Sudáfrica","Corea del Sur","Chequia"],
-  "Grupo B": ["Canadá","Suiza","Qatar","Bosnia y Herzegovina"],
-  "Grupo C": ["Brasil","Marruecos","Haití","Escocia"],
-  "Grupo D": ["Estados Unidos","Paraguay","Australia","Turquía"],
-  "Grupo E": ["Alemania","Curazao","Costa de Marfil","Ecuador"],
-  "Grupo F": ["Países Bajos","Japón","Túnez","Suecia"],
-  "Grupo G": ["Bélgica","Egipto","Irán","Nueva Zelanda"],
-  "Grupo H": ["España","Cabo Verde","Arabia Saudita","Uruguay"],
-  "Grupo I": ["Francia","Senegal","Noruega","Irak"],
-  "Grupo J": ["Argentina","Argelia","Austria","Jordania"],
-  "Grupo K": ["Portugal","Colombia","Uzbekistán","R.D. Congo"],
-  "Grupo L": ["Inglaterra","Croacia","Ghana","Panamá"],
-};
-
+// ============================================================
+// FIXTURE COMPLETO — 104 PARTIDOS ORDENADOS CRONOLÓGICAMENTE
+// ============================================================
 const FLAGS = {
   "México":"🇲🇽","Sudáfrica":"🇿🇦","Corea del Sur":"🇰🇷","Chequia":"🇨🇿",
   "Canadá":"🇨🇦","Suiza":"🇨🇭","Qatar":"🇶🇦","Bosnia y Herzegovina":"🇧🇦",
@@ -76,17 +47,186 @@ const FLAGS = {
   "Inglaterra":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Croacia":"🇭🇷","Ghana":"🇬🇭","Panamá":"🇵🇦",
 };
 
+// ============================================================
+// FECHAS DE CIERRE DE PRONÓSTICOS POR FASE
+// Cierre a las 00:00 hs (Argentina, UTC-3) del día indicado
+// ============================================================
+const PHASE_DEADLINES = {
+  "Fase de Grupos":          new Date("2026-06-11T03:00:00Z"), // 00:00 ARG = 03:00 UTC
+  "Dieciseisavos de Final":  new Date("2026-06-28T03:00:00Z"),
+  "Octavos de Final":        new Date("2026-07-04T03:00:00Z"),
+  "Cuartos de Final":        new Date("2026-07-09T03:00:00Z"),
+  "Semifinal":               new Date("2026-07-14T03:00:00Z"),
+  "3er y 4to Puesto":        new Date("2026-07-18T03:00:00Z"),
+  "Final 🏆":                new Date("2026-07-18T03:00:00Z"),
+};
+
+function isPhaseOpen(phase) {
+  const deadline = PHASE_DEADLINES[phase];
+  if (!deadline) return true;
+  return new Date() < deadline;
+}
+
+function phaseDeadlineLabel(phase) {
+  const deadline = PHASE_DEADLINES[phase];
+  if (!deadline) return "";
+  const now = new Date();
+  if (now >= deadline) return "🔒 CERRADO";
+  const days = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+  if (days <= 1) return "⚠️ Cierra hoy";
+  return `⏰ Cierra en ${days} días`;
+}
+
 function generateMatches() {
-  const matches = [];
-  let id = 1;
-  Object.entries(OFFICIAL_GROUPS).forEach(([group, teams]) => {
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) {
-        matches.push({ id: id++, group, home: teams[i], away: teams[j], result: null });
-      }
-    }
-  });
-  return matches;
+  const m = [];
+  // FASE DE GRUPOS — ordenados por fecha
+  const grupos = [
+    // Jueves 11 Jun
+    { id:1, group:"Grupo A", home:"México", away:"Sudáfrica", date:"Jue 11/06", time:"16:00" },
+    { id:2, group:"Grupo A", home:"Corea del Sur", away:"Chequia", date:"Jue 11/06", time:"23:00" },
+    // Viernes 12 Jun
+    { id:3, group:"Grupo B", home:"Canadá", away:"Bosnia y Herzegovina", date:"Vie 12/06", time:"16:00" },
+    { id:4, group:"Grupo D", home:"Estados Unidos", away:"Paraguay", date:"Vie 12/06", time:"22:00" },
+    // Sábado 13 Jun
+    { id:5, group:"Grupo B", home:"Qatar", away:"Suiza", date:"Sáb 13/06", time:"16:00" },
+    { id:6, group:"Grupo C", home:"Brasil", away:"Marruecos", date:"Sáb 13/06", time:"19:00" },
+    { id:7, group:"Grupo C", home:"Haití", away:"Escocia", date:"Sáb 13/06", time:"22:00" },
+    { id:8, group:"Grupo D", home:"Australia", away:"Turquía", date:"Sáb 13/06", time:"01:00" },
+    // Domingo 14 Jun
+    { id:9, group:"Grupo E", home:"Alemania", away:"Costa de Marfil", date:"Dom 14/06", time:"14:00" },
+    { id:10, group:"Grupo E", home:"Ecuador", away:"Curazao", date:"Dom 14/06", time:"20:00" },
+    { id:11, group:"Grupo F", home:"Países Bajos", away:"Japón", date:"Dom 14/06", time:"17:00" },
+    { id:12, group:"Grupo F", home:"Túnez", away:"Suecia", date:"Dom 14/06", time:"23:00" },
+    // Lunes 15 Jun
+    { id:13, group:"Grupo G", home:"Bélgica", away:"Irán", date:"Lun 15/06", time:"13:00" },
+    { id:14, group:"Grupo G", home:"Egipto", away:"Nueva Zelanda", date:"Lun 15/06", time:"19:00" },
+    { id:15, group:"Grupo H", home:"España", away:"Cabo Verde", date:"Lun 15/06", time:"16:00" },
+    { id:16, group:"Grupo H", home:"Arabia Saudita", away:"Uruguay", date:"Lun 15/06", time:"22:00" },
+    // Martes 16 Jun
+    { id:17, group:"Grupo I", home:"Francia", away:"Senegal", date:"Mar 16/06", time:"16:00" },
+    { id:18, group:"Grupo I", home:"Noruega", away:"Irak", date:"Mar 16/06", time:"19:00" },
+    { id:19, group:"Grupo J", home:"Argentina", away:"Argelia", date:"Mar 16/06", time:"22:00" },
+    { id:20, group:"Grupo J", home:"Austria", away:"Jordania", date:"Mar 16/06", time:"01:00" },
+    // Miércoles 17 Jun
+    { id:21, group:"Grupo K", home:"Portugal", away:"Colombia", date:"Mié 17/06", time:"14:00" },
+    { id:22, group:"Grupo K", home:"Uzbekistán", away:"R.D. Congo", date:"Mié 17/06", time:"23:00" },
+    { id:23, group:"Grupo L", home:"Inglaterra", away:"Croacia", date:"Mié 17/06", time:"17:00" },
+    { id:24, group:"Grupo L", home:"Ghana", away:"Panamá", date:"Mié 17/06", time:"20:00" },
+    // Jueves 18 Jun
+    { id:25, group:"Grupo A", home:"Chequia", away:"Sudáfrica", date:"Jue 18/06", time:"13:00" },
+    { id:26, group:"Grupo A", home:"México", away:"Corea del Sur", date:"Jue 18/06", time:"22:00" },
+    { id:27, group:"Grupo B", home:"Suiza", away:"Bosnia y Herzegovina", date:"Jue 18/06", time:"16:00" },
+    { id:28, group:"Grupo B", home:"Canadá", away:"Qatar", date:"Jue 18/06", time:"19:00" },
+    // Viernes 19 Jun
+    { id:29, group:"Grupo C", home:"Escocia", away:"Marruecos", date:"Vie 19/06", time:"19:00" },
+    { id:30, group:"Grupo C", home:"Brasil", away:"Haití", date:"Vie 19/06", time:"22:00" },
+    { id:31, group:"Grupo D", home:"Estados Unidos", away:"Australia", date:"Vie 19/06", time:"01:00" },
+    { id:32, group:"Grupo D", home:"Paraguay", away:"Turquía", date:"Vie 19/06", time:"16:00" },
+    // Sábado 20 Jun
+    { id:33, group:"Grupo E", home:"Alemania", away:"Ecuador", date:"Sáb 20/06", time:"17:00" },
+    { id:34, group:"Grupo E", home:"Costa de Marfil", away:"Curazao", date:"Sáb 20/06", time:"21:00" },
+    { id:35, group:"Grupo F", home:"Japón", away:"Túnez", date:"Sáb 20/06", time:"14:00" },
+    { id:36, group:"Grupo F", home:"Países Bajos", away:"Suecia", date:"Sáb 20/06", time:"01:00" },
+    // Domingo 21 Jun
+    { id:37, group:"Grupo G", home:"Irán", away:"Nueva Zelanda", date:"Dom 21/06", time:"13:00" },
+    { id:38, group:"Grupo G", home:"Bélgica", away:"Egipto", date:"Dom 21/06", time:"19:00" },
+    { id:39, group:"Grupo H", home:"Uruguay", away:"Cabo Verde", date:"Dom 21/06", time:"16:00" },
+    { id:40, group:"Grupo H", home:"España", away:"Arabia Saudita", date:"Dom 21/06", time:"22:00" },
+    // Lunes 22 Jun
+    { id:41, group:"Grupo I", home:"Senegal", away:"Noruega", date:"Lun 22/06", time:"18:00" },
+    { id:42, group:"Grupo I", home:"Francia", away:"Irak", date:"Lun 22/06", time:"21:00" },
+    { id:43, group:"Grupo J", home:"Argelia", away:"Austria", date:"Lun 22/06", time:"14:00" },
+    { id:44, group:"Grupo J", home:"Argentina", away:"Jordania", date:"Lun 22/06", time:"22:00" },  // corregido
+    // Martes 23 Jun
+    { id:45, group:"Grupo K", home:"Colombia", away:"Uzbekistán", date:"Mar 23/06", time:"14:00" },
+    { id:46, group:"Grupo K", home:"Portugal", away:"R.D. Congo", date:"Mar 23/06", time:"23:00" },
+    { id:47, group:"Grupo L", home:"Croacia", away:"Ghana", date:"Mar 23/06", time:"17:00" },
+    { id:48, group:"Grupo L", home:"Inglaterra", away:"Panamá", date:"Mar 23/06", time:"20:00" },
+    // Miércoles 24 Jun
+    { id:49, group:"Grupo A", home:"Chequia", away:"México", date:"Mié 24/06", time:"22:00" },
+    { id:50, group:"Grupo A", home:"Sudáfrica", away:"Corea del Sur", date:"Mié 24/06", time:"22:00" },
+    { id:51, group:"Grupo B", home:"Suiza", away:"Canadá", date:"Mié 24/06", time:"16:00" },
+    { id:52, group:"Grupo B", home:"Bosnia y Herzegovina", away:"Qatar", date:"Mié 24/06", time:"16:00" },
+    { id:53, group:"Grupo C", home:"Escocia", away:"Brasil", date:"Mié 24/06", time:"19:00" },
+    { id:54, group:"Grupo C", home:"Marruecos", away:"Haití", date:"Mié 24/06", time:"19:00" },
+    // Jueves 25 Jun
+    { id:55, group:"Grupo E", home:"Alemania", away:"Curazao", date:"Jue 25/06", time:"23:00" },
+    { id:56, group:"Grupo E", home:"Costa de Marfil", away:"Ecuador", date:"Jue 25/06", time:"23:00" },
+    { id:57, group:"Grupo F", home:"Japón", away:"Suecia", date:"Jue 25/06", time:"17:00" },
+    { id:58, group:"Grupo F", home:"Países Bajos", away:"Túnez", date:"Jue 25/06", time:"20:00" },
+    // Viernes 26 Jun
+    { id:59, group:"Grupo G", home:"Bélgica", away:"Nueva Zelanda", date:"Vie 26/06", time:"16:00" },
+    { id:60, group:"Grupo G", home:"Irán", away:"Egipto", date:"Vie 26/06", time:"16:00" },
+    { id:61, group:"Grupo H", home:"España", away:"Uruguay", date:"Vie 26/06", time:"21:00" },
+    { id:62, group:"Grupo H", home:"Arabia Saudita", away:"Cabo Verde", date:"Vie 26/06", time:"21:00" },
+    // Sábado 27 Jun
+    { id:63, group:"Grupo D", home:"Estados Unidos", away:"Turquía", date:"Sáb 27/06", time:"23:00" },
+    { id:64, group:"Grupo D", home:"Paraguay", away:"Australia", date:"Sáb 27/06", time:"23:00" },
+    { id:65, group:"Grupo I", home:"Francia", away:"Noruega", date:"Sáb 27/06", time:"00:00" },
+    { id:66, group:"Grupo I", home:"Senegal", away:"Irak", date:"Sáb 27/06", time:"00:00" },
+    { id:67, group:"Grupo J", home:"Argentina", away:"Austria", date:"Sáb 27/06", time:"18:00" },
+    { id:68, group:"Grupo J", home:"Argelia", away:"Jordania", date:"Sáb 27/06", time:"18:00" },
+    { id:69, group:"Grupo K", home:"Portugal", away:"Uzbekistán", date:"Sáb 27/06", time:"20:30" },
+    { id:70, group:"Grupo K", home:"Colombia", away:"R.D. Congo", date:"Sáb 27/06", time:"20:30" },
+    { id:71, group:"Grupo L", home:"Inglaterra", away:"Ghana", date:"Sáb 27/06", time:"18:00" },
+    { id:72, group:"Grupo L", home:"Croacia", away:"Panamá", date:"Sáb 27/06", time:"18:00" },
+  ];
+  grupos.forEach(p => m.push({ ...p, phase: "Fase de Grupos", result: null }));
+
+  // DIECISEISAVOS — partidos 73 a 88
+  const d16 = [
+    { id:73, label:"P73", matchNum:"P73", date:"Dom 28/06", time:"16:00" },
+    { id:74, label:"P74", matchNum:"P74", date:"Lun 29/06", time:"17:30" },
+    { id:75, label:"P75", matchNum:"P75", date:"Lun 29/06", time:"22:00" },
+    { id:76, label:"P76", matchNum:"P76", date:"Lun 29/06", time:"14:00" },
+    { id:77, label:"P77", matchNum:"P77", date:"Mar 30/06", time:"18:00" },
+    { id:78, label:"P78", matchNum:"P78", date:"Mar 30/06", time:"14:00" },
+    { id:79, label:"P79", matchNum:"P79", date:"Mar 30/06", time:"22:00" },
+    { id:80, label:"P80", matchNum:"P80", date:"Mié 01/07", time:"13:00" },
+    { id:81, label:"P81", matchNum:"P81", date:"Mié 01/07", time:"21:00" },
+    { id:82, label:"P82", matchNum:"P82", date:"Mié 01/07", time:"17:00" },
+    { id:83, label:"P83", matchNum:"P83", date:"Jue 02/07", time:"20:00" },
+    { id:84, label:"P84", matchNum:"P84", date:"Jue 02/07", time:"16:00" },
+    { id:85, label:"P85", matchNum:"P85", date:"Vie 03/07", time:"00:00" },
+    { id:86, label:"P86", matchNum:"P86", date:"Vie 03/07", time:"19:00" },
+    { id:87, label:"P87", matchNum:"P87", date:"Vie 03/07", time:"22:30" },
+    { id:88, label:"P88", matchNum:"P88", date:"Vie 03/07", time:"15:00" },
+  ];
+  d16.forEach(p => m.push({ ...p, group:"Dieciseisavos", phase:"Dieciseisavos de Final", home: p.home || "Por definir", away: p.away || "Por definir", result: null }));
+
+  // OCTAVOS — partidos 89 a 96
+  const oct = [
+    { id:89, date:"Sáb 04/07", time:"14:00" },
+    { id:90, date:"Sáb 04/07", time:"18:00" },
+    { id:91, date:"Dom 05/07", time:"17:00" },
+    { id:92, date:"Dom 05/07", time:"21:00" },
+    { id:93, date:"Lun 06/07", time:"16:00" },
+    { id:94, date:"Lun 06/07", time:"21:00" },
+    { id:95, date:"Mar 07/07", time:"13:00" },
+    { id:96, date:"Mar 07/07", time:"17:00" },
+  ];
+  oct.forEach(p => m.push({ ...p, group:"Octavos", phase:"Octavos de Final", home:"Por definir", away:"Por definir", result: null }));
+
+  // CUARTOS — partidos 97 a 100
+  const cua = [
+    { id:97, date:"Jue 09/07", time:"17:00" },
+    { id:98, date:"Vie 10/07", time:"16:00" },
+    { id:99, date:"Sáb 11/07", time:"18:00" },
+    { id:100, date:"Sáb 11/07", time:"22:00" },
+  ];
+  cua.forEach(p => m.push({ ...p, group:"Cuartos", phase:"Cuartos de Final", home:"Por definir", away:"Por definir", result: null }));
+
+  // SEMIFINALES — 101 y 102
+  m.push({ id:101, group:"Semifinales", phase:"Semifinal", home:"Por definir", away:"Por definir", date:"Mar 14/07", time:"16:00", result: null });
+  m.push({ id:102, group:"Semifinales", phase:"Semifinal", home:"Por definir", away:"Por definir", date:"Mié 15/07", time:"16:00", result: null });
+
+  // 3ER PUESTO — 103
+  m.push({ id:103, group:"3er Puesto", phase:"3er y 4to Puesto", home:"Por definir", away:"Por definir", date:"Sáb 18/07", time:"18:00", result: null });
+
+  // FINAL — 104
+  m.push({ id:104, group:"Final", phase:"Final 🏆", home:"Por definir", away:"Por definir", date:"Dom 19/07", time:"16:00", result: null });
+
+  return m;
 }
 
 const BASE_MATCHES = generateMatches();
@@ -115,7 +255,39 @@ function calcScore(agent, matches) {
 }
 
 // ============================================================
-// HELPERS
+// FIREBASE HELPERS
+// ============================================================
+async function initMatchesInDB() {
+  const ref = doc(db, "config", "matches");
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    const obj = {};
+    BASE_MATCHES.forEach(m => { obj[m.id] = { ...m }; });
+    await setDoc(ref, { matches: obj });
+  }
+}
+
+async function saveAgentToDB(agentData) {
+  const key = agentData.email.replace(/\./g, "_").replace(/@/g, "_at_");
+  await setDoc(doc(db, "agents", key), agentData, { merge: true });
+}
+
+async function updateAgentField(email, field, value) {
+  const key = email.replace(/\./g, "_").replace(/@/g, "_at_");
+  await updateDoc(doc(db, "agents", key), { [field]: value });
+}
+
+async function deleteAgentFromDB(email) {
+  const key = email.replace(/\./g, "_").replace(/@/g, "_at_");
+  await deleteDoc(doc(db, "agents", key));
+}
+
+async function updateMatchInDB(matchId, data) {
+  await updateDoc(doc(db, "config", "matches"), { [`matches.${matchId}`]: data });
+}
+
+// ============================================================
+// HELPERS UI
 // ============================================================
 function officeTag(office) {
   if (!office) return null;
@@ -124,6 +296,10 @@ function officeTag(office) {
 }
 function initials(name) {
   return (name || "?").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+}
+function teamDisplay(name) {
+  const flag = FLAGS[name] || "";
+  return `${flag} ${name}`;
 }
 
 // ============================================================
@@ -134,10 +310,9 @@ const CSS = `
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --verde:#0d4a1e;--verde-mid:#1a6b2e;--verde-light:#2d9147;--verde-cancha:#1e7a35;
-  --celeste:#74b9e0;--celeste-arg:#54acdb;
-  --blanco:#f5f5f5;--rojo-kw:#c0392b;--rojo-kw-l:#e74c3c;
-  --dorado:#d4a017;--dorado-l:#f0c040;--dorado-pale:#f9e8a0;
-  --negro:#060c06;
+  --celeste:#74b9e0;--celeste-arg:#54acdb;--blanco:#f5f5f5;
+  --rojo-kw:#c0392b;--rojo-kw-l:#e74c3c;
+  --dorado:#d4a017;--dorado-l:#f0c040;--dorado-pale:#f9e8a0;--negro:#060c06;
 }
 body{font-family:'Barlow',sans-serif;background:var(--negro);color:var(--blanco);min-height:100vh}
 .app-bg{min-height:100vh;background:radial-gradient(ellipse at 20% 0%,rgba(29,123,53,.22) 0%,transparent 55%),radial-gradient(ellipse at 80% 100%,rgba(192,57,43,.12) 0%,transparent 55%),linear-gradient(160deg,#040a04 0%,#090d09 50%,#0b0808 100%);background-attachment:fixed}
@@ -156,8 +331,7 @@ body{font-family:'Barlow',sans-serif;background:var(--negro);color:var(--blanco)
 .nav{background:rgba(0,0,0,.55);border-bottom:1px solid rgba(212,160,23,.18);backdrop-filter:blur(10px);position:sticky;top:0;z-index:100}
 .nav-inner{max-width:1200px;margin:0 auto;display:flex;overflow-x:auto;padding:0 10px}
 .nav-btn{background:none;border:none;color:rgba(255,255,255,.45);font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:600;letter-spacing:2px;text-transform:uppercase;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap}
-.nav-btn:hover{color:var(--dorado-l)}
-.nav-btn.active{color:var(--dorado-l);border-bottom-color:var(--dorado)}
+.nav-btn:hover{color:var(--dorado-l)}.nav-btn.active{color:var(--dorado-l);border-bottom-color:var(--dorado)}
 .nav-user{margin-left:auto;padding:13px 14px;font-size:.72rem;color:rgba(255,255,255,.35);font-family:'Barlow Condensed',sans-serif;letter-spacing:1px;white-space:nowrap}
 .main{max-width:1200px;margin:0 auto;padding:22px 14px}
 .card{background:linear-gradient(135deg,rgba(13,74,30,.28) 0%,rgba(8,12,8,.82) 100%);border:1px solid rgba(212,160,23,.18);border-radius:14px;padding:22px;margin-bottom:18px;backdrop-filter:blur(4px)}
@@ -197,6 +371,7 @@ select.input option{background:#1a1a1a}
 .btn-gold{background:linear-gradient(135deg,var(--dorado),var(--dorado-l));color:var(--negro)}
 .btn-gold:hover{filter:brightness(1.1);transform:translateY(-1px)}
 .btn-red{background:linear-gradient(135deg,var(--rojo-kw),var(--rojo-kw-l));color:#fff}
+.btn-red:hover{filter:brightness(1.1)}
 .btn-outline{background:transparent;border:1px solid rgba(212,160,23,.35);color:var(--dorado-l)}
 .btn-outline:hover{border-color:var(--dorado);background:rgba(212,160,23,.08)}
 .btn-sm{padding:6px 13px;font-size:.72rem}
@@ -217,7 +392,9 @@ select.input option{background:#1a1a1a}
 .vs{font-family:'Bebas Neue',sans-serif;font-size:.85rem;color:rgba(255,255,255,.28);padding:0 6px}
 .score-disp{font-family:'Bebas Neue',sans-serif;font-size:1.7rem;color:var(--dorado-l);min-width:72px;text-align:center}
 .score-pair{display:flex;align-items:center;gap:5px}
-.group-lbl{font-family:'Barlow Condensed',sans-serif;font-size:.65rem;letter-spacing:2px;color:var(--celeste);text-transform:uppercase;width:72px}
+.match-meta{font-family:'Barlow Condensed',sans-serif;font-size:.65rem;letter-spacing:1px;color:var(--celeste);text-transform:uppercase;min-width:90px}
+.phase-header{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:3px;color:var(--dorado);margin:22px 0 10px;padding-bottom:6px;border-bottom:1px solid rgba(212,160,23,.2)}
+.pending-badge{background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.2);border-radius:8px;padding:6px 12px;font-size:.75rem;color:rgba(255,255,255,.4);font-family:'Barlow Condensed',sans-serif;letter-spacing:1px}
 .stat-box{background:rgba(255,255,255,.035);border:1px solid rgba(212,160,23,.12);border-radius:11px;padding:18px;text-align:center}
 .stat-val{font-family:'Bebas Neue',sans-serif;font-size:2.2rem;color:var(--dorado-l);line-height:1}
 .stat-lbl{font-family:'Barlow Condensed',sans-serif;font-size:.72rem;letter-spacing:2px;color:rgba(255,255,255,.38);text-transform:uppercase;margin-top:3px}
@@ -233,6 +410,7 @@ select.input option{background:#1a1a1a}
 .alert{border-radius:9px;padding:11px 14px;font-size:.83rem;margin-bottom:14px}
 .alert-ok{background:rgba(45,145,71,.18);border:1px solid var(--verde-light);color:#7dff9e}
 .alert-warn{background:rgba(212,160,23,.12);border:1px solid var(--dorado);color:var(--dorado-pale)}
+.alert-err{background:rgba(192,57,43,.18);border:1px solid var(--rojo-kw);color:#ff9988}
 .my-score{background:linear-gradient(135deg,rgba(13,74,30,.55),rgba(192,57,43,.18));border:1px solid rgba(212,160,23,.35);border-radius:14px;padding:18px 22px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:22px}
 .ms-lbl{font-family:'Barlow Condensed',sans-serif;font-size:.72rem;letter-spacing:3px;color:var(--celeste);text-transform:uppercase}
 .ms-total{font-family:'Bebas Neue',sans-serif;font-size:2.8rem;color:var(--dorado-l);line-height:1}
@@ -250,53 +428,21 @@ select.input option{background:#1a1a1a}
 .loading{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#060c06;color:var(--dorado-l);font-family:'Bebas Neue',sans-serif;font-size:1.5rem;letter-spacing:3px}
 .spinner{width:48px;height:48px;border:3px solid rgba(212,160,23,.2);border-top-color:var(--dorado);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+.confirm-box{background:rgba(192,57,43,.15);border:1px solid var(--rojo-kw);border-radius:10px;padding:14px;margin-top:10px}
 @media(max-width:600px){
   .grid3{grid-template-columns:1fr}
   .podium{gap:6px}
-  .match-teams{min-width:150px}
+  .match-teams{min-width:140px}
   .header-titles h1{font-size:1.5rem}
 }
 `;
-
-// ============================================================
-// FIREBASE HELPERS
-// ============================================================
-async function initMatchesInDB() {
-  const ref = doc(db, "config", "matches");
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
-    const matchesObj = {};
-    BASE_MATCHES.forEach(m => { matchesObj[m.id] = { ...m }; });
-    await setDoc(ref, { matches: matchesObj });
-  }
-}
-
-async function saveAgentToDB(agentData) {
-  const emailKey = agentData.email.replace(/\./g, "_").replace(/@/g, "_at_");
-  await setDoc(doc(db, "agents", emailKey), agentData, { merge: true });
-}
-
-async function updateAgentField(email, field, value) {
-  const emailKey = email.replace(/\./g, "_").replace(/@/g, "_at_");
-  await updateDoc(doc(db, "agents", emailKey), { [field]: value });
-}
-
-async function updateMatchResult(matchId, result) {
-  const ref = doc(db, "config", "matches");
-  await updateDoc(ref, { [`matches.${matchId}.result`]: result });
-}
 
 // ============================================================
 // COMPONENTS
 // ============================================================
 
 function LoadingScreen() {
-  return (
-    <div className="loading">
-      <div className="spinner"></div>
-      <div>CARGANDO PRODE...</div>
-    </div>
-  );
+  return <div className="loading"><div className="spinner"></div><div>CARGANDO PRODE...</div></div>;
 }
 
 // ---------- LOGIN ----------
@@ -310,10 +456,7 @@ function LoginScreen({ onLogin, loading }) {
 
   function submit() {
     setError("");
-    if (email.trim() === ADMIN_USER && pass === ADMIN_PASS) {
-      onLogin({ email: ADMIN_USER, name: "Admin", isAdmin: true });
-      return;
-    }
+    if (email.trim() === ADMIN_USER && pass === ADMIN_PASS) { onLogin({ email: ADMIN_USER, name: "Admin", isAdmin: true }); return; }
     if (mode === "login") {
       if (!email.includes("@")) { setError("Ingresá tu mail de KW"); return; }
       onLogin({ email: email.trim().toLowerCase(), name: email.split("@")[0], isAdmin: false });
@@ -335,35 +478,14 @@ function LoginScreen({ onLogin, loading }) {
           <button className={`tab-btn ${mode === "register" ? "active" : ""}`} onClick={() => setMode("register")}>Registrarme</button>
         </div>
         {error && <div className="login-err">{error}</div>}
-        {mode === "register" && (
-          <div className="fg">
-            <label className="fl">Nombre completo</label>
-            <input className="input" placeholder="Ej: Lucas Martínez" value={name} onChange={e => setName(e.target.value)} />
-          </div>
-        )}
+        {mode === "register" && <div className="fg"><label className="fl">Nombre completo</label><input className="input" placeholder="Ej: Lucas Martínez" value={name} onChange={e => setName(e.target.value)} /></div>}
         <div className="fg">
           <label className="fl">{mode === "login" ? "Mail o usuario" : "Mail KW"}</label>
           <input className="input" placeholder={mode === "login" ? "tu@kw.com o admin" : "tu@kw.com.ar"} value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
         </div>
-        {mode === "login" && (
-          <div className="fg">
-            <label className="fl">Contraseña (solo admin)</label>
-            <input className="input" type="password" placeholder="Solo si sos admin" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
-          </div>
-        )}
-        {mode === "register" && (
-          <div className="fg">
-            <label className="fl">Oficina</label>
-            <select className="input" value={office} onChange={e => setOffice(e.target.value)}>
-              <option>KW ON</option>
-              <option>KW Leloir</option>
-              <option>KW City</option>
-            </select>
-          </div>
-        )}
-        <button className="btn btn-gold" style={{ width: "100%", marginTop: 6 }} onClick={submit} disabled={loading}>
-          {loading ? "Cargando..." : mode === "login" ? "⚽ Entrar al Prode" : "Registrarme"}
-        </button>
+        {mode === "login" && <div className="fg"><label className="fl">Contraseña (solo admin)</label><input className="input" type="password" placeholder="Solo si sos admin" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} /></div>}
+        {mode === "register" && <div className="fg"><label className="fl">Oficina</label><select className="input" value={office} onChange={e => setOffice(e.target.value)}><option>KW ON</option><option>KW Leloir</option><option>KW City</option></select></div>}
+        <button className="btn btn-gold" style={{ width: "100%", marginTop: 6 }} onClick={submit} disabled={loading}>{loading ? "Cargando..." : mode === "login" ? "⚽ Entrar al Prode" : "Registrarme"}</button>
       </div>
     </div>
   );
@@ -373,12 +495,8 @@ function LoginScreen({ onLogin, loading }) {
 function RankingView({ agents, matches }) {
   const [search, setSearch] = useState("");
   const scored = agents.map(a => ({ ...a, score: calcScore(a, matches) })).sort((a, b) => b.score.total - a.score.total);
-  const filtered = scored.filter(a =>
-    a.name.toLowerCase().includes(search.toLowerCase()) ||
-    (a.office || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = scored.filter(a => a.name.toLowerCase().includes(search.toLowerCase()) || (a.office || "").toLowerCase().includes(search.toLowerCase()));
   const top3 = scored.slice(0, 3);
-
   return (
     <div>
       {top3.length >= 3 && (
@@ -389,30 +507,26 @@ function RankingView({ agents, matches }) {
               <div className="podium-name">{a.name.split(" ")[0]}</div>
               {officeTag(a.office)}
               <div className="podium-pts">{a.score.total} pts</div>
-              <div className="podium-block"><span className="medal">{p === 1 ? "🥇" : p === 2 ? "🥈" : "🥉"}</span></div>
+              <div className="podium-block"><span className="medal">{p===1?"🥇":p===2?"🥈":"🥉"}</span></div>
             </div>
           ))}
         </div>
       )}
       <input className="search-in" placeholder="🔍 Buscar agente u oficina..." value={search} onChange={e => setSearch(e.target.value)} />
-      {filtered.length === 0 ? (
-        <div className="empty-state"><div className="empty-icon">⚽</div><div className="empty-txt">Sin agentes registrados aún</div></div>
-      ) : (
+      {filtered.length === 0 ? <div className="empty-state"><div className="empty-icon">⚽</div><div className="empty-txt">Sin agentes registrados aún</div></div> : (
         <table className="table">
-          <thead>
-            <tr><th>#</th><th>Agente</th><th>Oficina</th><th>⚽ Prode</th><th>🏡 Inmob.</th><th>📚 Dev.</th><th>Total</th></tr>
-          </thead>
+          <thead><tr><th>#</th><th>Agente</th><th>Oficina</th><th>⚽ Prode</th><th>🏡 Inmob.</th><th>📚 Dev.</th><th>Total</th></tr></thead>
           <tbody>
             {filtered.map(a => {
               const pos = scored.findIndex(s => s.email === a.email) + 1;
               return (
                 <tr key={a.email}>
-                  <td><div className={`rank-num ${pos <= 3 ? `pos-${pos}` : ""}`}>{pos}</div></td>
+                  <td><div className={`rank-num ${pos<=3?`pos-${pos}`:""}`}>{pos}</div></td>
                   <td><div className="agent-name">{a.name}</div></td>
                   <td>{officeTag(a.office)}</td>
-                  <td><span style={{ color: "#74b9e0", fontWeight: 700 }}>{a.score.prode}</span></td>
-                  <td><span style={{ color: "#7dff9e", fontWeight: 700 }}>{a.score.inmo}</span></td>
-                  <td><span style={{ color: "#ffb347", fontWeight: 700 }}>{a.score.dev}</span></td>
+                  <td><span style={{color:"#74b9e0",fontWeight:700}}>{a.score.prode}</span></td>
+                  <td><span style={{color:"#7dff9e",fontWeight:700}}>{a.score.inmo}</span></td>
+                  <td><span style={{color:"#ffb347",fontWeight:700}}>{a.score.dev}</span></td>
                   <td><div className="pts-total">{a.score.total}</div></td>
                 </tr>
               );
@@ -426,10 +540,9 @@ function RankingView({ agents, matches }) {
 
 // ---------- OFICINAS ----------
 function OfficinaView({ agents, matches }) {
-  const offices = ["KW ON", "KW Leloir", "KW City"];
-  const colors = { "KW ON": "#c0392b", "KW Leloir": "#54acdb", "KW City": "#d4a017" };
-  const icons = { "KW ON": "🔴", "KW Leloir": "🔵", "KW City": "🟡" };
-
+  const offices = ["KW ON","KW Leloir","KW City"];
+  const colors = { "KW ON":"#c0392b","KW Leloir":"#54acdb","KW City":"#d4a017" };
+  const icons = { "KW ON":"🔴","KW Leloir":"🔵","KW City":"🟡" };
   return (
     <div>
       <div className="card">
@@ -437,34 +550,23 @@ function OfficinaView({ agents, matches }) {
         {offices.map(off => {
           const group = agents.filter(a => a.office === off);
           const scores = group.map(a => calcScore(a, matches));
-          const totalPts = scores.reduce((s, c) => s + c.total, 0);
-          const avgPts = group.length ? Math.round(totalPts / group.length) : 0;
-          const topIdx = scores.indexOf(Math.max(...scores.map(s => s.total)));
+          const totalPts = scores.reduce((s,c) => s+c.total, 0);
+          const avgPts = group.length ? Math.round(totalPts/group.length) : 0;
+          const maxScore = Math.max(...scores.map(s=>s.total), 0);
+          const topIdx = scores.findIndex(s=>s.total===maxScore);
           const topAgent = group[topIdx];
-          const totalInmo = scores.reduce((s, c) => s + c.inmo, 0);
-          const totalCierres = group.reduce((s, a) => s + (a.logros?.cierre_1_punta || 0) + (a.logros?.cierre_2_puntas || 0), 0);
-
+          const totalCierres = group.reduce((s,a) => s+(a.logros?.cierre_1_punta||0)+(a.logros?.cierre_2_puntas||0), 0);
           return (
-            <div key={off} style={{ background: "rgba(255,255,255,.03)", border: `1px solid ${colors[off]}44`, borderRadius: 12, padding: 18, marginBottom: 14 }}>
-              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: "1.3rem", letterSpacing: 2, color: colors[off], marginBottom: 12 }}>
-                {icons[off]} {off} <span style={{ fontSize: ".75rem", color: "rgba(255,255,255,.4)", fontFamily: "Barlow Condensed", letterSpacing: 1 }}>— {group.length} agentes</span>
+            <div key={off} style={{background:"rgba(255,255,255,.03)",border:`1px solid ${colors[off]}44`,borderRadius:12,padding:18,marginBottom:14}}>
+              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:"1.3rem",letterSpacing:2,color:colors[off],marginBottom:12}}>
+                {icons[off]} {off} <span style={{fontSize:".75rem",color:"rgba(255,255,255,.4)",fontFamily:"Barlow Condensed",letterSpacing:1}}>— {group.length} agentes</span>
               </div>
               <div className="office-grid">
-                <div className="stat-box"><div className="mini-stat" style={{ color: colors[off] }}>{totalPts}</div><div className="mini-lbl">Pts totales</div></div>
-                <div className="stat-box"><div className="mini-stat" style={{ color: colors[off] }}>{avgPts}</div><div className="mini-lbl">Promedio</div></div>
-                <div className="stat-box"><div className="mini-stat" style={{ color: colors[off] }}>{totalCierres}</div><div className="mini-lbl">Cierres</div></div>
+                <div className="stat-box"><div className="mini-stat" style={{color:colors[off]}}>{totalPts}</div><div className="mini-lbl">Pts totales</div></div>
+                <div className="stat-box"><div className="mini-stat" style={{color:colors[off]}}>{avgPts}</div><div className="mini-lbl">Promedio</div></div>
+                <div className="stat-box"><div className="mini-stat" style={{color:colors[off]}}>{totalCierres}</div><div className="mini-lbl">Cierres</div></div>
               </div>
-              {topAgent && (
-                <div style={{ marginTop: 12, fontSize: ".83rem", color: "rgba(255,255,255,.45)" }}>
-                  🏆 Líder: <strong style={{ color: colors[off] }}>{topAgent.name}</strong>
-                  <span style={{ marginLeft: 8, color: "rgba(255,255,255,.3)" }}>{scores[topIdx]?.total || 0} pts</span>
-                </div>
-              )}
-              {totalInmo > 0 && (
-                <div style={{ marginTop: 6, fontSize: ".78rem", color: "rgba(255,255,255,.3)" }}>
-                  🏡 {totalInmo} pts inmobiliarios acumulados
-                </div>
-              )}
+              {topAgent && <div style={{marginTop:12,fontSize:".83rem",color:"rgba(255,255,255,.45)"}}>🏆 Líder: <strong style={{color:colors[off]}}>{topAgent.name}</strong><span style={{marginLeft:8,color:"rgba(255,255,255,.3)"}}>{maxScore} pts</span></div>}
             </div>
           );
         })}
@@ -475,62 +577,67 @@ function OfficinaView({ agents, matches }) {
 
 // ---------- PRODE ----------
 function ProdeView({ agent, matches, onSave }) {
-  const [preds, setPreds] = useState({ ...(agent.predictions || {}) });
+  const [preds, setPreds] = useState({...(agent.predictions||{})});
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  const groups = [...new Set(matches.map(m => m.group))];
 
-  function setPred(id, field, val) {
-    setPreds(p => ({ ...p, [id]: { ...(p[id] || {}), [field]: val } }));
-  }
+  const phases = ["Fase de Grupos","Dieciseisavos de Final","Octavos de Final","Cuartos de Final","Semifinal","3er y 4to Puesto","Final 🏆"];
 
-  async function save() {
-    setSaving(true);
-    await onSave(preds);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  }
+  function setPred(id, field, val) { setPreds(p => ({...p,[id]:{...(p[id]||{}),[field]:val}})); }
+  async function save() { setSaving(true); await onSave(preds); setSaving(false); setSaved(true); setTimeout(()=>setSaved(false),2500); }
 
   return (
     <div>
       {saved && <div className="alert alert-ok">✅ ¡Predicciones guardadas en la nube!</div>}
-      <div className="alert alert-warn">⚽ <strong>5 pts</strong> resultado exacto · <strong>2 pts</strong> ganador correcto · Fixture oficial FIFA 2026</div>
-      {groups.map(g => (
-        <div key={g} className="card">
-          <div className="card-title">⚽ {g}</div>
-          {matches.filter(m => m.group === g).map(m => (
-            <div key={m.id} className="match-card">
-              <div className="group-lbl">{g.replace("Grupo ", "GRP ")}</div>
-              <div className="match-teams">
-                <span>{FLAGS[m.home] || "🏳"}</span>
-                <span className="team-nm">{m.home}</span>
-                <span className="vs">vs</span>
-                <span className="team-nm">{m.away}</span>
-                <span>{FLAGS[m.away] || "🏳"}</span>
-              </div>
-              {m.result ? (
-                <div className="score-disp">{m.result.homeGoals} - {m.result.awayGoals}
-                  <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.28)", fontFamily: "Barlow Condensed" }}>FINAL</div>
-                </div>
-              ) : (
-                <div className="score-pair">
-                  <input className="score-in" type="number" min="0" max="20"
-                    value={preds[m.id]?.homeGoals ?? ""}
-                    onChange={e => setPred(m.id, "homeGoals", e.target.value)} placeholder="0" />
-                  <span style={{ color: "rgba(255,255,255,.35)", fontFamily: "Bebas Neue" }}>-</span>
-                  <input className="score-in" type="number" min="0" max="20"
-                    value={preds[m.id]?.awayGoals ?? ""}
-                    onChange={e => setPred(m.id, "awayGoals", e.target.value)} placeholder="0" />
-                </div>
-              )}
+      <div className="alert alert-warn">⚽ <strong>5 pts</strong> resultado exacto · <strong>2 pts</strong> ganador correcto · 104 partidos · Fixture oficial FIFA 2026</div>
+      {phases.map(phase => {
+        const phaseMatches = matches.filter(m => m.phase === phase);
+        if (phaseMatches.length === 0) return null;
+        const open = isPhaseOpen(phase);
+        const deadlineLabel = phaseDeadlineLabel(phase);
+        return (
+          <div key={phase}>
+            <div className="phase-header" style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+              <span>{phase === "Fase de Grupos" ? "⚽" : phase.includes("Final 🏆") ? "🏆" : phase.includes("Semi") ? "🔥" : phase.includes("3er") ? "🥉" : "⚡"} {phase}</span>
+              <span style={{fontSize:".75rem",fontFamily:"Barlow Condensed",letterSpacing:1,color:open?(deadlineLabel.includes("hoy")?"#ffb347":"rgba(255,255,255,.4)"):"#ff6b6b",fontWeight:700}}>{deadlineLabel}</span>
             </div>
-          ))}
-        </div>
-      ))}
-      <button className="btn btn-gold" style={{ width: "100%" }} onClick={save} disabled={saving}>
-        {saving ? "Guardando..." : "💾 Guardar mis predicciones"}
-      </button>
+            {!open && <div style={{background:"rgba(192,57,43,.12)",border:"1px solid rgba(192,57,43,.3)",borderRadius:8,padding:"8px 14px",marginBottom:10,fontSize:".8rem",color:"#ff9988",fontFamily:"Barlow Condensed",letterSpacing:1}}>🔒 Esta fase está cerrada. No se pueden cargar ni modificar pronósticos.</div>}
+            {phaseMatches.map(m => {
+              const isPending = m.home === "Por definir" || m.away === "Por definir";
+              const myPred = preds[m.id];
+              return (
+                <div key={m.id} className="match-card">
+                  <div className="match-meta">{m.date}<br/>{m.time} hs</div>
+                  <div className="match-teams">
+                    <span>{FLAGS[m.home]||"🏳"}</span>
+                    <span className="team-nm">{m.home}</span>
+                    <span className="vs">vs</span>
+                    <span className="team-nm">{m.away}</span>
+                    <span>{FLAGS[m.away]||"🏳"}</span>
+                  </div>
+                  {m.result ? (
+                    <div className="score-disp">{m.result.homeGoals} - {m.result.awayGoals}<div style={{fontSize:".58rem",color:"rgba(255,255,255,.28)",fontFamily:"Barlow Condensed"}}>FINAL</div></div>
+                  ) : isPending ? (
+                    <div className="pending-badge">A definir</div>
+                  ) : !open ? (
+                    <div className="score-disp" style={{fontSize:"1.2rem",opacity:.5}}>
+                      {myPred?.homeGoals??"-"} - {myPred?.awayGoals??"-"}
+                      <div style={{fontSize:".58rem",color:"rgba(255,255,255,.28)",fontFamily:"Barlow Condensed"}}>TU PRODE</div>
+                    </div>
+                  ) : (
+                    <div className="score-pair">
+                      <input className="score-in" type="number" min="0" max="20" value={preds[m.id]?.homeGoals??""} onChange={e=>setPred(m.id,"homeGoals",e.target.value)} placeholder="0"/>
+                      <span style={{color:"rgba(255,255,255,.35)",fontFamily:"Bebas Neue"}}>-</span>
+                      <input className="score-in" type="number" min="0" max="20" value={preds[m.id]?.awayGoals??""} onChange={e=>setPred(m.id,"awayGoals",e.target.value)} placeholder="0"/>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      <button className="btn btn-gold" style={{width:"100%",marginTop:16}} onClick={save} disabled={saving}>{saving?"Guardando...":"💾 Guardar mis predicciones"}</button>
     </div>
   );
 }
@@ -538,173 +645,177 @@ function ProdeView({ agent, matches, onSave }) {
 // ---------- MIS STATS ----------
 function MyStatsView({ agent, matches }) {
   const score = calcScore(agent, matches);
-  const logroItems = Object.entries(agent.logros || {}).filter(([, v]) => v > 0);
+  const logroItems = Object.entries(agent.logros||{}).filter(([,v])=>v>0);
   return (
     <div>
       <div className="my-score">
-        <div>
-          <div className="ms-lbl">Tu puntaje total</div>
-          <div className="ms-total">{score.total} pts</div>
-        </div>
+        <div><div className="ms-lbl">Tu puntaje total</div><div className="ms-total">{score.total} pts</div></div>
         <div className="grid3">
-          <div className="stat-box"><div className="stat-val" style={{ color: "#74b9e0" }}>{score.prode}</div><div className="stat-lbl">⚽ Prode</div></div>
-          <div className="stat-box"><div className="stat-val" style={{ color: "#7dff9e" }}>{score.inmo}</div><div className="stat-lbl">🏡 Inmob.</div></div>
-          <div className="stat-box"><div className="stat-val" style={{ color: "#ffb347" }}>{score.dev}</div><div className="stat-lbl">📚 Dev.</div></div>
+          <div className="stat-box"><div className="stat-val" style={{color:"#74b9e0"}}>{score.prode}</div><div className="stat-lbl">⚽ Prode</div></div>
+          <div className="stat-box"><div className="stat-val" style={{color:"#7dff9e"}}>{score.inmo}</div><div className="stat-lbl">🏡 Inmob.</div></div>
+          <div className="stat-box"><div className="stat-val" style={{color:"#ffb347"}}>{score.dev}</div><div className="stat-lbl">📚 Dev.</div></div>
         </div>
       </div>
       {logroItems.length > 0 ? (
         <div className="card">
           <div className="card-title">🏅 Tus logros cargados</div>
           <div className="logros-grid">
-            {logroItems.map(([key, count]) => (
+            {logroItems.map(([key,count])=>(
               <div key={key} className="logro-item">
                 <div className="logro-name">{LOGROS_LABELS[key]}</div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: "Bebas Neue", fontSize: "1rem" }}>×{count}</div>
-                  <div className="logro-pts">{count * POINT_VALUES[key]} pts</div>
-                </div>
+                <div style={{textAlign:"right"}}><div style={{fontFamily:"Bebas Neue",fontSize:"1rem"}}>×{count}</div><div className="logro-pts">{count*POINT_VALUES[key]} pts</div></div>
               </div>
             ))}
           </div>
         </div>
-      ) : (
-        <div className="empty-state">
-          <div className="empty-icon">🏡</div>
-          <div className="empty-txt">El admin cargará tus logros acá</div>
-        </div>
-      )}
+      ) : <div className="empty-state"><div className="empty-icon">🏡</div><div className="empty-txt">El admin cargará tus logros acá</div></div>}
     </div>
   );
 }
 
 // ---------- ADMIN ----------
-function AdminView({ agents, matches, onSaveResult, onSaveLogros }) {
+function AdminView({ agents, matches, onSaveResult, onSaveLogros, onDeleteAgent }) {
   const [tab, setTab] = useState("resultados");
   const [selAgent, setSelAgent] = useState("");
   const [logros, setLogros] = useState({});
   const [msg, setMsg] = useState("");
+  const [msgType, setMsgType] = useState("ok");
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const agent = agents.find(a => a.email === selAgent);
-  useEffect(() => { setLogros(agent ? { ...(agent.logros || {}) } : {}); }, [selAgent]);
+  const agent = agents.find(a=>a.email===selAgent);
+  useEffect(()=>{setLogros(agent?{...(agent.logros||{})}:{});},[selAgent]);
 
-  function flash(m) { setMsg(m); setTimeout(() => setMsg(""), 2500); }
+  function flash(m, type="ok") { setMsg(m); setMsgType(type); setTimeout(()=>setMsg(""),2500); }
 
-  async function saveResult(matchId, h, a) {
-    await onSaveResult(matchId, { homeGoals: parseInt(h), awayGoals: parseInt(a) });
-    flash("Resultado guardado ✅");
+  async function saveResult(matchId, matchData) {
+    await onSaveResult(matchId, matchData);
+    flash("Guardado ✅");
   }
-
   async function saveLogros() {
-    if (!agent) return;
-    setSaving(true);
+    if(!agent) return; setSaving(true);
     await onSaveLogros(agent.email, logros);
-    setSaving(false);
-    flash(`Logros de ${agent.name.split(" ")[0]} guardados ✅`);
+    setSaving(false); flash(`Logros de ${agent.name.split(" ")[0]} guardados ✅`);
+  }
+  async function handleDelete(email) {
+    await onDeleteAgent(email);
+    setConfirmDelete(null);
+    if(selAgent===email) setSelAgent("");
+    flash("Agente eliminado ✅");
+  }
+  function changeLogro(key,delta) {
+    const cur=logros[key]||0; const once=ONCE_PER_YEAR.includes(key);
+    setLogros(l=>({...l,[key]:Math.max(0,once?Math.min(1,cur+delta):cur+delta)}));
   }
 
-  function changeLogro(key, delta) {
-    const cur = logros[key] || 0;
-    const once = ONCE_PER_YEAR.includes(key);
-    setLogros(l => ({ ...l, [key]: Math.max(0, once ? Math.min(1, cur + delta) : cur + delta) }));
-  }
+  const phases = ["Fase de Grupos","Dieciseisavos de Final","Octavos de Final","Cuartos de Final","Semifinal","3er y 4to Puesto","Final 🏆"];
 
   return (
     <div>
       <div className="card admin-card">
-        <div className="card-title" style={{ color: "#ff9988" }}>🔐 Panel de Administración</div>
-        <div style={{ fontSize: ".83rem", color: "rgba(255,255,255,.45)" }}>
-          Agentes: <strong style={{ color: "#fff" }}>{agents.length}</strong> &nbsp;·&nbsp;
-          Partidos con resultado: <strong style={{ color: "#fff" }}>{matches.filter(m => m.result).length}</strong> / {matches.length}
+        <div className="card-title" style={{color:"#ff9988"}}>🔐 Panel de Administración</div>
+        <div style={{fontSize:".83rem",color:"rgba(255,255,255,.45)"}}>
+          Agentes: <strong style={{color:"#fff"}}>{agents.length}</strong> &nbsp;·&nbsp;
+          Partidos con resultado: <strong style={{color:"#fff"}}>{matches.filter(m=>m.result).length}</strong> / {matches.length}
         </div>
       </div>
-      {msg && <div className="alert alert-ok">{msg}</div>}
+      {msg && <div className={`alert alert-${msgType}`}>{msg}</div>}
       <div className="tabs">
-        <button className={`tab-btn ${tab === "resultados" ? "active" : ""}`} onClick={() => setTab("resultados")}>⚽ Resultados</button>
-        <button className={`tab-btn ${tab === "logros" ? "active" : ""}`} onClick={() => setTab("logros")}>🏡 Logros</button>
-        <button className={`tab-btn ${tab === "agentes" ? "active" : ""}`} onClick={() => setTab("agentes")}>👥 Agentes</button>
-        <button className={`tab-btn ${tab === "oficinas" ? "active" : ""}`} onClick={() => setTab("oficinas")}>🏢 Oficinas</button>
+        <button className={`tab-btn ${tab==="resultados"?"active":""}`} onClick={()=>setTab("resultados")}>⚽ Resultados</button>
+        <button className={`tab-btn ${tab==="logros"?"active":""}`} onClick={()=>setTab("logros")}>🏡 Logros</button>
+        <button className={`tab-btn ${tab==="agentes"?"active":""}`} onClick={()=>setTab("agentes")}>👥 Agentes</button>
+        <button className={`tab-btn ${tab==="oficinas"?"active":""}`} onClick={()=>setTab("oficinas")}>🏢 Oficinas</button>
       </div>
 
-      {tab === "resultados" && (
+      {tab==="resultados" && (
         <div>
-          {[...new Set(matches.map(m => m.group))].map(g => (
-            <div key={g} className="card">
-              <div className="card-title">⚽ {g}</div>
-              {matches.filter(m => m.group === g).map(m => (
-                <ResultRow key={m.id} match={m} onSave={saveResult} />
-              ))}
-            </div>
-          ))}
+          {phases.map(phase => {
+            const pm = matches.filter(m=>m.phase===phase);
+            if(pm.length===0) return null;
+            return (
+              <div key={phase} className="card">
+                <div className="card-title">{phase.includes("🏆")?"🏆":phase.includes("Semi")?"🔥":phase.includes("3er")?"🥉":phase.includes("Octavo")?"⚡":phase.includes("Cuarto")?"💥":phase.includes("Diecis")?"🎯":"⚽"} {phase}</div>
+                {pm.map(m=><ResultRow key={m.id} match={m} onSave={saveResult}/>)}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {tab === "logros" && (
+      {tab==="logros" && (
         <div className="card">
           <div className="card-title">🏡 Cargar logros por agente</div>
           <div className="fg">
             <label className="fl">Seleccioná agente</label>
-            <select className="input" value={selAgent} onChange={e => setSelAgent(e.target.value)}>
+            <select className="input" value={selAgent} onChange={e=>setSelAgent(e.target.value)}>
               <option value="">-- Elegir agente --</option>
-              {[...agents].sort((a, b) => a.name.localeCompare(b.name)).map(a => (
-                <option key={a.email} value={a.email}>{a.name} — {a.office || "sin oficina"}</option>
+              {[...agents].sort((a,b)=>a.name.localeCompare(b.name)).map(a=>(
+                <option key={a.email} value={a.email}>{a.name} — {a.office||"sin oficina"}</option>
               ))}
             </select>
           </div>
           {agent && (
             <>
-              <div className="divider" />
+              <div className="divider"/>
               <div className="section-lbl">Operaciones inmobiliarias</div>
               <div className="logros-grid">
-                {INMO_KEYS.map(key => (
+                {INMO_KEYS.map(key=>(
                   <div key={key} className="logro-item">
                     <div><div className="logro-name">{LOGROS_LABELS[key]}</div><div className="logro-pts">{POINT_VALUES[key]} pts c/u</div></div>
                     <div className="counter">
-                      <button className="cbtn" onClick={() => changeLogro(key, -1)}>−</button>
-                      <div className="cval">{logros[key] || 0}</div>
-                      <button className="cbtn" onClick={() => changeLogro(key, 1)}>+</button>
+                      <button className="cbtn" onClick={()=>changeLogro(key,-1)}>−</button>
+                      <div className="cval">{logros[key]||0}</div>
+                      <button className="cbtn" onClick={()=>changeLogro(key,1)}>+</button>
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="divider" />
+              <div className="divider"/>
               <div className="section-lbl">Desarrollo profesional KW</div>
               <div className="logros-grid">
-                {DEV_KEYS.map(key => (
+                {DEV_KEYS.map(key=>(
                   <div key={key} className="logro-item">
-                    <div><div className="logro-name">{LOGROS_LABELS[key]}</div><div className="logro-pts">{POINT_VALUES[key]} pts{ONCE_PER_YEAR.includes(key) ? " · 1×/año" : " c/u"}</div></div>
+                    <div><div className="logro-name">{LOGROS_LABELS[key]}</div><div className="logro-pts">{POINT_VALUES[key]} pts{ONCE_PER_YEAR.includes(key)?" · 1×/año":" c/u"}</div></div>
                     <div className="counter">
-                      <button className="cbtn" onClick={() => changeLogro(key, -1)}>−</button>
-                      <div className="cval">{logros[key] || 0}</div>
-                      <button className="cbtn" onClick={() => changeLogro(key, 1)}>+</button>
+                      <button className="cbtn" onClick={()=>changeLogro(key,-1)}>−</button>
+                      <div className="cval">{logros[key]||0}</div>
+                      <button className="cbtn" onClick={()=>changeLogro(key,1)}>+</button>
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="divider" />
-              <button className="btn btn-gold" onClick={saveLogros} disabled={saving}>
-                {saving ? "Guardando..." : `💾 Guardar logros de ${agent.name.split(" ")[0]}`}
-              </button>
+              <div className="divider"/>
+              <button className="btn btn-gold" onClick={saveLogros} disabled={saving}>{saving?"Guardando...":`💾 Guardar logros de ${agent.name.split(" ")[0]}`}</button>
             </>
           )}
         </div>
       )}
 
-      {tab === "agentes" && (
+      {tab==="agentes" && (
         <div className="card">
           <div className="card-title">👥 Agentes ({agents.length})</div>
           <table className="table">
-            <thead><tr><th>Nombre</th><th>Mail</th><th>Oficina</th><th>Predicciones</th><th>Puntos</th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Mail</th><th>Oficina</th><th>Predicciones</th><th>Puntos</th><th>Acción</th></tr></thead>
             <tbody>
-              {[...agents].sort((a, b) => a.name.localeCompare(b.name)).map(a => {
-                const s = calcScore(a, matches);
+              {[...agents].sort((a,b)=>a.name.localeCompare(b.name)).map(a=>{
+                const s=calcScore(a,matches);
                 return (
                   <tr key={a.email}>
                     <td className="agent-name">{a.name}</td>
-                    <td style={{ fontSize: ".78rem", color: "rgba(255,255,255,.4)" }}>{a.email}</td>
+                    <td style={{fontSize:".78rem",color:"rgba(255,255,255,.4)"}}>{a.email}</td>
                     <td>{officeTag(a.office)}</td>
-                    <td style={{ color: "rgba(255,255,255,.45)", fontSize: ".83rem" }}>{Object.keys(a.predictions || {}).length} partidos</td>
+                    <td style={{color:"rgba(255,255,255,.45)",fontSize:".83rem"}}>{Object.keys(a.predictions||{}).length} partidos</td>
                     <td><span className="pts-total">{s.total}</span></td>
+                    <td>
+                      {confirmDelete===a.email ? (
+                        <div style={{display:"flex",gap:6}}>
+                          <button className="btn btn-red btn-sm" onClick={()=>handleDelete(a.email)}>Confirmar</button>
+                          <button className="btn btn-outline btn-sm" onClick={()=>setConfirmDelete(null)}>Cancelar</button>
+                        </div>
+                      ) : (
+                        <button className="btn btn-red btn-sm" onClick={()=>setConfirmDelete(a.email)}>🗑️ Eliminar</button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -713,31 +824,52 @@ function AdminView({ agents, matches, onSaveResult, onSaveLogros }) {
         </div>
       )}
 
-      {tab === "oficinas" && <OfficinaView agents={agents} matches={matches} />}
+      {tab==="oficinas" && <OfficinaView agents={agents} matches={matches}/>}
     </div>
   );
 }
 
 function ResultRow({ match, onSave }) {
-  const [h, setH] = useState(match.result?.homeGoals ?? "");
-  const [a, setA] = useState(match.result?.awayGoals ?? "");
+  const [h, setH] = useState(match.result?.homeGoals??"");
+  const [a, setA] = useState(match.result?.awayGoals??"");
+  const [homeTeam, setHomeTeam] = useState(match.home==="Por definir"?"":match.home);
+  const [awayTeam, setAwayTeam] = useState(match.away==="Por definir"?"":match.away);
+  const isPending = match.home==="Por definir"||match.away==="Por definir";
+
+  async function save() {
+    const newHome = homeTeam||match.home;
+    const newAway = awayTeam||match.away;
+    await onSave(match.id, {
+      ...match,
+      home: newHome, away: newAway,
+      result: { homeGoals:parseInt(h)||0, awayGoals:parseInt(a)||0 }
+    });
+  }
+
   return (
-    <div className="match-card">
-      <div className="match-teams" style={{ flex: 1 }}>
-        <span>{FLAGS[match.home] || "🏳"}</span>
-        <span className="team-nm">{match.home}</span>
-        <span className="vs">vs</span>
-        <span className="team-nm">{match.away}</span>
-        <span>{FLAGS[match.away] || "🏳"}</span>
-      </div>
+    <div className="match-card" style={{flexWrap:"wrap",gap:10}}>
+      <div className="match-meta" style={{minWidth:90}}>{match.date}<br/>{match.time} hs</div>
+      {isPending ? (
+        <div style={{display:"flex",alignItems:"center",gap:8,flex:1,flexWrap:"wrap"}}>
+          <input className="input" style={{maxWidth:160,fontSize:".82rem",padding:"6px 10px"}} placeholder="Equipo local" value={homeTeam} onChange={e=>setHomeTeam(e.target.value)}/>
+          <span className="vs">vs</span>
+          <input className="input" style={{maxWidth:160,fontSize:".82rem",padding:"6px 10px"}} placeholder="Equipo visitante" value={awayTeam} onChange={e=>setAwayTeam(e.target.value)}/>
+        </div>
+      ) : (
+        <div className="match-teams" style={{flex:1}}>
+          <span>{FLAGS[match.home]||"🏳"}</span>
+          <span className="team-nm">{match.home}</span>
+          <span className="vs">vs</span>
+          <span className="team-nm">{match.away}</span>
+          <span>{FLAGS[match.away]||"🏳"}</span>
+        </div>
+      )}
       <div className="score-pair">
-        <input className="score-in" type="number" min="0" value={h} onChange={e => setH(e.target.value)} placeholder="0" />
-        <span style={{ color: "rgba(255,255,255,.35)", fontFamily: "Bebas Neue" }}>-</span>
-        <input className="score-in" type="number" min="0" value={a} onChange={e => setA(e.target.value)} placeholder="0" />
+        <input className="score-in" type="number" min="0" value={h} onChange={e=>setH(e.target.value)} placeholder="0"/>
+        <span style={{color:"rgba(255,255,255,.35)",fontFamily:"Bebas Neue"}}>-</span>
+        <input className="score-in" type="number" min="0" value={a} onChange={e=>setA(e.target.value)} placeholder="0"/>
       </div>
-      <button className="btn btn-primary btn-sm" onClick={() => onSave(match.id, h, a)}>
-        {match.result ? "✏️ Editar" : "💾 Guardar"}
-      </button>
+      <button className="btn btn-primary btn-sm" onClick={save}>{match.result?"✏️ Editar":"💾 Guardar"}</button>
     </div>
   );
 }
@@ -753,65 +885,58 @@ export default function App() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [tab, setTab] = useState("ranking");
 
-  // Init matches in DB + listen to agents and matches
-  useEffect(() => {
-    initMatchesInDB().then(() => {
-      // Listen to matches
-      const unsubMatches = onSnapshot(doc(db, "config", "matches"), snap => {
-        if (snap.exists()) {
-          const data = snap.data().matches;
-          const arr = Object.values(data).sort((a, b) => a.id - b.id);
+  useEffect(()=>{
+    initMatchesInDB().then(()=>{
+      const unsubM = onSnapshot(doc(db,"config","matches"), snap=>{
+        if(snap.exists()){
+          const arr = Object.values(snap.data().matches).sort((a,b)=>a.id-b.id);
           setMatches(arr);
         }
       });
-      // Listen to agents
-      const unsubAgents = onSnapshot(collection(db, "agents"), snap => {
-        const arr = snap.docs.map(d => d.data());
-        setAgents(arr);
+      const unsubA = onSnapshot(collection(db,"agents"), snap=>{
+        setAgents(snap.docs.map(d=>d.data()));
         setAppLoading(false);
       });
-      return () => { unsubMatches(); unsubAgents(); };
+      return ()=>{unsubM();unsubA();};
     });
-  }, []);
+  },[]);
 
   async function handleLogin(user) {
     setLoginLoading(true);
-    if (!user.isAdmin) {
-      const emailKey = user.email.replace(/\./g, "_").replace(/@/g, "_at_");
-      const snap = await getDoc(doc(db, "agents", emailKey));
-      if (!snap.exists()) {
-        await saveAgentToDB({ email: user.email, name: user.name, office: user.office || "KW ON", predictions: {}, logros: {} });
+    if(!user.isAdmin){
+      const key = user.email.replace(/\./g,"_").replace(/@/g,"_at_");
+      const snap = await getDoc(doc(db,"agents",key));
+      if(!snap.exists()){
+        await saveAgentToDB({email:user.email,name:user.name,office:user.office||"KW ON",predictions:{},logros:{}});
       } else {
-        const data = snap.data();
-        user.name = data.name;
-        user.office = data.office;
+        const data=snap.data(); user.name=data.name; user.office=data.office;
       }
     }
-    setLoginLoading(false);
-    setSession(user);
-    setTab(user.isAdmin ? "admin" : "ranking");
+    setLoginLoading(false); setSession(user);
+    setTab(user.isAdmin?"admin":"ranking");
   }
 
-  async function handleSavePred(preds) {
-    await updateAgentField(session.email, "predictions", preds);
+  async function handleSavePred(preds) { await updateAgentField(session.email,"predictions",preds); }
+
+  async function handleSaveResult(matchId, matchData) {
+    await updateMatchInDB(matchId, matchData);
   }
 
-  async function handleSaveResult(matchId, result) {
-    await updateMatchResult(matchId, result);
+  async function handleSaveLogros(email, logros) { await updateAgentField(email,"logros",logros); }
+
+  async function handleDeleteAgent(email) {
+    await deleteAgentFromDB(email);
+    if(session?.email===email) setSession(null);
   }
 
-  async function handleSaveLogros(email, logros) {
-    await updateAgentField(email, "logros", logros);
-  }
+  const currentAgent = session&&!session.isAdmin ? agents.find(a=>a.email===session.email) : null;
 
-  const currentAgent = session && !session.isAdmin ? agents.find(a => a.email === session.email) : null;
-
-  if (appLoading) return (<><style>{CSS}</style><LoadingScreen /></>);
-  if (!session) return (<><style>{CSS}</style><LoginScreen onLogin={handleLogin} loading={loginLoading} /></>);
+  if(appLoading) return (<><style>{CSS}</style><LoadingScreen/></>);
+  if(!session) return (<><style>{CSS}</style><LoginScreen onLogin={handleLogin} loading={loginLoading}/></>);
 
   const navItems = session.isAdmin
-    ? [{ id: "ranking", label: "🏆 Ranking" }, { id: "oficinas", label: "🏢 Oficinas" }, { id: "admin", label: "🔐 Admin" }]
-    : [{ id: "ranking", label: "🏆 Ranking" }, { id: "oficinas", label: "🏢 Oficinas" }, { id: "prode", label: "⚽ Mis predicciones" }, { id: "mystats", label: "📊 Mis puntos" }];
+    ? [{id:"ranking",label:"🏆 Ranking"},{id:"oficinas",label:"🏢 Oficinas"},{id:"admin",label:"🔐 Admin"}]
+    : [{id:"ranking",label:"🏆 Ranking"},{id:"oficinas",label:"🏢 Oficinas"},{id:"prode",label:"⚽ Mis predicciones"},{id:"mystats",label:"📊 Mis puntos"}];
 
   return (
     <>
@@ -830,24 +955,24 @@ export default function App() {
               <span className="badge badge-on">KW ON</span>
               <span className="badge badge-leloir">KW Leloir</span>
               <span className="badge badge-city">KW City</span>
-              <button className="btn btn-outline btn-sm" onClick={() => setSession(null)}>Salir</button>
+              <button className="btn btn-outline btn-sm" onClick={()=>setSession(null)}>Salir</button>
             </div>
           </div>
         </header>
         <nav className="nav">
           <div className="nav-inner">
-            {navItems.map(item => (
-              <button key={item.id} className={`nav-btn ${tab === item.id ? "active" : ""}`} onClick={() => setTab(item.id)}>{item.label}</button>
+            {navItems.map(item=>(
+              <button key={item.id} className={`nav-btn ${tab===item.id?"active":""}`} onClick={()=>setTab(item.id)}>{item.label}</button>
             ))}
-            <div className="nav-user">{session.isAdmin ? "👑 Admin" : `👤 ${session.name?.split(" ")[0]}`}</div>
+            <div className="nav-user">{session.isAdmin?"👑 Admin":`👤 ${session.name?.split(" ")[0]}`}</div>
           </div>
         </nav>
         <main className="main">
-          {tab === "ranking" && <div className="card"><div className="card-title">🏆 Ranking general — todos contra todos</div><RankingView agents={agents} matches={matches} /></div>}
-          {tab === "oficinas" && <OfficinaView agents={agents} matches={matches} />}
-          {tab === "prode" && currentAgent && <ProdeView agent={currentAgent} matches={matches} onSave={handleSavePred} />}
-          {tab === "mystats" && currentAgent && <MyStatsView agent={currentAgent} matches={matches} />}
-          {tab === "admin" && session.isAdmin && <AdminView agents={agents} matches={matches} onSaveResult={handleSaveResult} onSaveLogros={handleSaveLogros} />}
+          {tab==="ranking" && <div className="card"><div className="card-title">🏆 Ranking general — todos contra todos</div><RankingView agents={agents} matches={matches}/></div>}
+          {tab==="oficinas" && <OfficinaView agents={agents} matches={matches}/>}
+          {tab==="prode" && currentAgent && <ProdeView agent={currentAgent} matches={matches} onSave={handleSavePred}/>}
+          {tab==="mystats" && currentAgent && <MyStatsView agent={currentAgent} matches={matches}/>}
+          {tab==="admin" && session.isAdmin && <AdminView agents={agents} matches={matches} onSaveResult={handleSaveResult} onSaveLogros={handleSaveLogros} onDeleteAgent={handleDeleteAgent}/>}
         </main>
       </div>
     </>
