@@ -242,7 +242,10 @@ function calcScore(agent, matches) {
     const p = agent.predictions?.[m.id];
     if (!p) return;
     const { homeGoals: rh, awayGoals: ra } = m.result;
-    const ph = parseInt(p.homeGoals), pa = parseInt(p.awayGoals);
+    const phRaw = parseInt(p.homeGoals), paRaw = parseInt(p.awayGoals);
+    // Si un campo está vacío pero el otro tiene valor, el vacío se trata como 0
+    const ph = isNaN(phRaw) ? (isNaN(paRaw) ? NaN : 0) : phRaw;
+    const pa = isNaN(paRaw) ? (isNaN(phRaw) ? NaN : 0) : paRaw;
     if (!isNaN(ph) && !isNaN(pa)) {
       if (ph === rh && pa === ra) { prode += POINT_VALUES.resultado_exacto; return; }
       const rw = rh > ra ? "h" : ra > rh ? "a" : "d";
@@ -506,11 +509,46 @@ function LoginScreen({ onLogin, loading }) {
 // ---------- RANKING ----------
 function RankingView({ agents, matches }) {
   const [search, setSearch] = useState("");
+  const [capturing, setCapturing] = useState(false);
+  const rankingRef = useState(null);
+  const captureRef = { current: null };
   const scored = agents.map(a => ({ ...a, score: calcScore(a, matches) })).sort((a, b) => b.score.total - a.score.total);
   const filtered = scored.filter(a => a.name.toLowerCase().includes(search.toLowerCase()) || (a.office || "").toLowerCase().includes(search.toLowerCase()));
   const top3 = scored.slice(0, 3);
+
+  async function captureRanking() {
+    setCapturing(true);
+    try {
+      const html2canvas = (await import("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.js")).default;
+      const el = document.getElementById("ranking-capture-zone");
+      const canvas = await html2canvas(el, {
+        backgroundColor: "#0a1a0a",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      const link = document.createElement("a");
+      link.download = `ranking-kw-${new Date().toISOString().slice(0,10)}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch(e) {
+      alert("Error al generar imagen. Intentá de nuevo.");
+    }
+    setCapturing(false);
+  }
+
   return (
     <div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+        <button
+          onClick={captureRanking}
+          disabled={capturing}
+          style={{background:"linear-gradient(135deg,#c0392b,#922b21)",border:"none",borderRadius:8,color:"#fff",fontFamily:"'Bebas Neue',sans-serif",fontSize:"1rem",letterSpacing:2,padding:"8px 18px",cursor:capturing?"not-allowed":"pointer",opacity:capturing?0.7:1,display:"flex",alignItems:"center",gap:8}}
+        >
+          {capturing ? "⏳ GENERANDO..." : "📸 COMPARTIR RANKING"}
+        </button>
+      </div>
+      <div id="ranking-capture-zone" style={{background:"#0a1a0a",padding:16,borderRadius:12}}>
       {top3.length >= 3 && (
         <div className="podium">
           {[{ a: top3[1], p: 2 }, { a: top3[0], p: 1 }, { a: top3[2], p: 3 }].map(({ a, p }) => (
@@ -546,6 +584,7 @@ function RankingView({ agents, matches }) {
           </tbody>
         </table>
       )}
+      </div>
     </div>
   );
 }
@@ -596,7 +635,19 @@ function ProdeView({ agent, matches, overrides, onSave }) {
   const phases = ["Fase de Grupos","Dieciseisavos de Final","Octavos de Final","Cuartos de Final","Semifinal","3er y 4to Puesto","Final 🏆"];
 
   function setPred(id, field, val) { setPreds(p => ({...p,[id]:{...(p[id]||{}),[field]:val}})); }
-  async function save() { setSaving(true); await onSave(preds); setSaving(false); setSaved(true); setTimeout(()=>setSaved(false),2500); }
+  async function save() {
+    setSaving(true);
+    // Fix: si el agente dejó un campo vacío pero el placeholder era 0, guardamos "0"
+    const cleanedPreds = {};
+    Object.entries(preds).forEach(([matchId, pred]) => {
+      cleanedPreds[matchId] = {
+        homeGoals: (pred.homeGoals === "" || pred.homeGoals === null || pred.homeGoals === undefined) ? "0" : pred.homeGoals,
+        awayGoals: (pred.awayGoals === "" || pred.awayGoals === null || pred.awayGoals === undefined) ? "0" : pred.awayGoals,
+      };
+    });
+    await onSave(cleanedPreds);
+    setSaving(false); setSaved(true); setTimeout(()=>setSaved(false),2500);
+  }
 
   return (
     <div>
