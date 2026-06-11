@@ -516,10 +516,21 @@ function RankingView({ agents, matches }) {
   const filtered = scored.filter(a => a.name.toLowerCase().includes(search.toLowerCase()) || (a.office || "").toLowerCase().includes(search.toLowerCase()));
   const top3 = scored.slice(0, 3);
 
+  function loadHtml2Canvas() {
+    return new Promise((resolve, reject) => {
+      if (window.html2canvas) { resolve(window.html2canvas); return; }
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+      script.onload = () => resolve(window.html2canvas);
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
   async function captureRanking() {
     setCapturing(true);
     try {
-      const html2canvas = (await import("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.js")).default;
+      const html2canvas = await loadHtml2Canvas();
       const el = document.getElementById("ranking-capture-zone");
       const canvas = await html2canvas(el, {
         backgroundColor: "#0a1a0a",
