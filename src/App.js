@@ -61,7 +61,8 @@ const PHASE_DEADLINES = {
   "Final 🏆":                new Date("2026-07-18T03:00:00Z"),
 };
 
-function isPhaseOpen(phase) {
+function isPhaseOpen(phase, overrides = {}) {
+  if (overrides[phase] === true) return true;  // admin override activo
   const deadline = PHASE_DEADLINES[phase];
   if (!deadline) return true;
   return new Date() < deadline;
@@ -284,6 +285,17 @@ async function deleteAgentFromDB(email) {
 
 async function updateMatchInDB(matchId, data) {
   await updateDoc(doc(db, "config", "matches"), { [`matches.${matchId}`]: data });
+}
+
+async function saveOverrideToDB(overrides) {
+  await setDoc(doc(db, "config", "overrides"), overrides, { merge: true });
+}
+
+async function getOverridesFromDB() {
+  try {
+    const snap = await getDoc(doc(db, "config", "overrides"));
+    return snap.exists() ? snap.data() : {};
+  } catch { return {}; }
 }
 
 // ============================================================
@@ -576,7 +588,7 @@ function OfficinaView({ agents, matches }) {
 }
 
 // ---------- PRODE ----------
-function ProdeView({ agent, matches, onSave }) {
+function ProdeView({ agent, matches, overrides, onSave }) {
   const [preds, setPreds] = useState({...(agent.predictions||{})});
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -593,7 +605,7 @@ function ProdeView({ agent, matches, onSave }) {
       {phases.map(phase => {
         const phaseMatches = matches.filter(m => m.phase === phase);
         if (phaseMatches.length === 0) return null;
-        const open = isPhaseOpen(phase);
+        const open = isPhaseOpen(phase, overrides);
         const deadlineLabel = phaseDeadlineLabel(phase);
         return (
           <div key={phase}>
@@ -674,7 +686,7 @@ function MyStatsView({ agent, matches }) {
 }
 
 // ---------- ADMIN ----------
-function AdminView({ agents, matches, onSaveResult, onSaveLogros, onDeleteAgent }) {
+function AdminView({ agents, matches, overrides, onSaveResult, onSaveLogros, onDeleteAgent, onSaveOverride }) {
   const [tab, setTab] = useState("resultados");
   const [selAgent, setSelAgent] = useState("");
   const [logros, setLogros] = useState({});
@@ -725,6 +737,7 @@ function AdminView({ agents, matches, onSaveResult, onSaveLogros, onDeleteAgent 
         <button className={`tab-btn ${tab==="logros"?"active":""}`} onClick={()=>setTab("logros")}>🏡 Logros</button>
         <button className={`tab-btn ${tab==="agentes"?"active":""}`} onClick={()=>setTab("agentes")}>👥 Agentes</button>
         <button className={`tab-btn ${tab==="oficinas"?"active":""}`} onClick={()=>setTab("oficinas")}>🏢 Oficinas</button>
+        <button className={`tab-btn ${tab==="override"?"active":""}`} onClick={()=>setTab("override")} style={{color: Object.values(overrides).some(v=>v) ? "#ff9988" : ""}}>🔓 Habilitar fase</button>
       </div>
 
       {tab==="resultados" && (
@@ -825,6 +838,49 @@ function AdminView({ agents, matches, onSaveResult, onSaveLogros, onDeleteAgent 
       )}
 
       {tab==="oficinas" && <OfficinaView agents={agents} matches={matches}/>}
+
+      {tab==="override" && (
+        <div className="card" style={{borderColor:"rgba(255,165,0,.4)",background:"linear-gradient(135deg,rgba(255,165,0,.06),rgba(8,12,8,.9))"}}>
+          <div className="card-title" style={{color:"#ffb347"}}>🔓 Habilitar carga de pronósticos</div>
+          <div className="alert alert-warn" style={{marginBottom:16}}>
+            Activá una fase para que los agentes puedan registrarse y cargar o editar sus pronósticos aunque la fecha límite ya pasó. <strong>Las predicciones ya cargadas no se borran.</strong> Desactivá cuando todos hayan cargado.
+          </div>
+          {["Fase de Grupos","Dieciseisavos de Final","Octavos de Final","Cuartos de Final","Semifinal","3er y 4to Puesto","Final 🏆"].map(phase => {
+            const isActive = overrides[phase] === true;
+            const deadlinePassed = !isPhaseOpen(phase, {});
+            return (
+              <div key={phase} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:isActive?"rgba(255,165,0,.1)":"rgba(255,255,255,.03)",border:`1px solid ${isActive?"rgba(255,165,0,.4)":"rgba(255,255,255,.08)"}`,borderRadius:10,padding:"14px 16px",marginBottom:10}}>
+                <div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:".95rem",letterSpacing:1}}>
+                    {phase}
+                    {isActive && <span style={{marginLeft:10,fontSize:".7rem",color:"#ffb347",fontFamily:"Barlow Condensed",letterSpacing:1}}>● HABILITADA</span>}
+                    {!deadlinePassed && !isActive && <span style={{marginLeft:10,fontSize:".7rem",color:"#7dff9e",fontFamily:"Barlow Condensed",letterSpacing:1}}>● ABIERTA (fecha vigente)</span>}
+                  </div>
+                  {!deadlinePassed && <div style={{fontSize:".75rem",color:"rgba(255,255,255,.35)",marginTop:3}}>Esta fase aún no venció — está abierta naturalmente</div>}
+                  {deadlinePassed && !isActive && <div style={{fontSize:".75rem",color:"rgba(255,255,255,.35)",marginTop:3}}>Cerrada automáticamente por vencimiento de fecha</div>}
+                </div>
+                <button
+                  className={`btn btn-sm ${isActive ? "btn-red" : "btn-gold"}`}
+                  onClick={()=>onSaveOverride(phase, !isActive)}
+                >
+                  {isActive ? "🔒 Cerrar" : "🔓 Abrir"}
+                </button>
+              </div>
+            );
+          })}
+          {Object.values(overrides).some(v=>v) && (
+            <div style={{marginTop:8}}>
+              <button className="btn btn-red btn-sm" onClick={()=>{
+                const closed = {};
+                Object.keys(overrides).forEach(k=>{closed[k]=false;});
+                ["Fase de Grupos","Dieciseisavos de Final","Octavos de Final","Cuartos de Final","Semifinal","3er y 4to Puesto","Final 🏆"].forEach(p=>{closed[p]=false;});
+                onSaveOverride("__all__", false);
+                Object.keys(overrides).forEach(k=>onSaveOverride(k,false));
+              }}>🔒 Cerrar todas las fases</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -881,6 +937,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [agents, setAgents] = useState([]);
   const [matches, setMatches] = useState(BASE_MATCHES);
+  const [overrides, setOverrides] = useState({});
   const [appLoading, setAppLoading] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
   const [tab, setTab] = useState("ranking");
@@ -897,7 +954,11 @@ export default function App() {
         setAgents(snap.docs.map(d=>d.data()));
         setAppLoading(false);
       });
-      return ()=>{unsubM();unsubA();};
+      const unsubO = onSnapshot(doc(db,"config","overrides"), snap=>{
+        if(snap.exists()) setOverrides(snap.data());
+        else setOverrides({});
+      });
+      return ()=>{unsubM();unsubA();unsubO();};
     });
   },[]);
 
@@ -923,6 +984,12 @@ export default function App() {
   }
 
   async function handleSaveLogros(email, logros) { await updateAgentField(email,"logros",logros); }
+
+  async function handleSaveOverride(phase, value) {
+    const newOverrides = { ...overrides, [phase]: value };
+    await saveOverrideToDB(newOverrides);
+    setOverrides(newOverrides);
+  }
 
   async function handleDeleteAgent(email) {
     await deleteAgentFromDB(email);
@@ -970,9 +1037,9 @@ export default function App() {
         <main className="main">
           {tab==="ranking" && <div className="card"><div className="card-title">🏆 Ranking general — todos contra todos</div><RankingView agents={agents} matches={matches}/></div>}
           {tab==="oficinas" && <OfficinaView agents={agents} matches={matches}/>}
-          {tab==="prode" && currentAgent && <ProdeView agent={currentAgent} matches={matches} onSave={handleSavePred}/>}
+          {tab==="prode" && currentAgent && <ProdeView agent={currentAgent} matches={matches} overrides={overrides} onSave={handleSavePred}/>}
           {tab==="mystats" && currentAgent && <MyStatsView agent={currentAgent} matches={matches}/>}
-          {tab==="admin" && session.isAdmin && <AdminView agents={agents} matches={matches} onSaveResult={handleSaveResult} onSaveLogros={handleSaveLogros} onDeleteAgent={handleDeleteAgent}/>}
+          {tab==="admin" && session.isAdmin && <AdminView agents={agents} matches={matches} overrides={overrides} onSaveResult={handleSaveResult} onSaveLogros={handleSaveLogros} onDeleteAgent={handleDeleteAgent} onSaveOverride={handleSaveOverride}/>}
         </main>
       </div>
     </>
