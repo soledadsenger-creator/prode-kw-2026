@@ -510,8 +510,6 @@ function LoginScreen({ onLogin, loading }) {
 function RankingView({ agents, matches }) {
   const [search, setSearch] = useState("");
   const [capturing, setCapturing] = useState(false);
-  const rankingRef = useState(null);
-  const captureRef = { current: null };
   const scored = agents.map(a => ({ ...a, score: calcScore(a, matches) })).sort((a, b) => b.score.total - a.score.total);
   const filtered = scored.filter(a => a.name.toLowerCase().includes(search.toLowerCase()) || (a.office || "").toLowerCase().includes(search.toLowerCase()));
   const top3 = scored.slice(0, 3);
