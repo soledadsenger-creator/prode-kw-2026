@@ -68,9 +68,12 @@ function phaseDeadlineLabel(phase) {
   return `⏰ Cierra en ${days} días`;
 }
 
-// ── CLAVE: resultado real solo cuando hasResult === true ──
+// ── resultado real: hasResult===true (datos nuevos) O result cargado sin hasResult (datos viejos) ──
 function matchHasResult(m) {
-  return m.hasResult === true;
+  if (m.hasResult === true) return true;
+  if (m.hasResult === undefined && m.result &&
+      m.result.homeGoals !== undefined && m.result.awayGoals !== undefined) return true;
+  return false;
 }
 
 function generateMatches() {
