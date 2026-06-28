@@ -2,9 +2,6 @@ import { useState, useEffect } from "react";
 import { doc, getDoc, collection, setDoc, onSnapshot, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
-// ============================================================
-// CONSTANTS
-// ============================================================
 const ADMIN_USER = "admin";
 const ADMIN_PASS = "garykeller";
 
@@ -29,9 +26,6 @@ const ONCE_PER_YEAR = ["breakthrough", "plan_411", "calculadora_gci", "guiones"]
 const INMO_KEYS = ["captacion_simple","captacion_exclusiva","reserva_venta","cierre_1_punta","cierre_2_puntas","reserva_alquiler","firma_alquiler"];
 const DEV_KEYS = ["breakthrough","capacitacion","plan_411","calculadora_gci","guiones"];
 
-// ============================================================
-// FIXTURE COMPLETO — 104 PARTIDOS ORDENADOS CRONOLÓGICAMENTE
-// ============================================================
 const FLAGS = {
   "México":"🇲🇽","Sudáfrica":"🇿🇦","Corea del Sur":"🇰🇷","Chequia":"🇨🇿",
   "Canadá":"🇨🇦","Suiza":"🇨🇭","Qatar":"🇶🇦","Bosnia y Herzegovina":"🇧🇦",
@@ -47,12 +41,8 @@ const FLAGS = {
   "Inglaterra":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Croacia":"🇭🇷","Ghana":"🇬🇭","Panamá":"🇵🇦",
 };
 
-// ============================================================
-// FECHAS DE CIERRE DE PRONÓSTICOS POR FASE
-// Cierre a las 00:00 hs (Argentina, UTC-3) del día indicado
-// ============================================================
 const PHASE_DEADLINES = {
-  "Fase de Grupos":          new Date("2026-06-11T03:00:00Z"), // 00:00 ARG = 03:00 UTC
+  "Fase de Grupos":          new Date("2026-06-11T03:00:00Z"),
   "Dieciseisavos de Final":  new Date("2026-06-28T03:00:00Z"),
   "Octavos de Final":        new Date("2026-07-04T03:00:00Z"),
   "Cuartos de Final":        new Date("2026-07-09T03:00:00Z"),
@@ -62,7 +52,7 @@ const PHASE_DEADLINES = {
 };
 
 function isPhaseOpen(phase, overrides = {}) {
-  if (overrides[phase] === true) return true;  // admin override activo
+  if (overrides[phase] === true) return true;
   const deadline = PHASE_DEADLINES[phase];
   if (!deadline) return true;
   return new Date() < deadline;
@@ -78,9 +68,13 @@ function phaseDeadlineLabel(phase) {
   return `⏰ Cierra en ${days} días`;
 }
 
+// ── CLAVE: resultado real solo cuando hasResult === true ──
+function matchHasResult(m) {
+  return m.hasResult === true;
+}
+
 function generateMatches() {
   const m = [];
-  // FASE DE GRUPOS — ordenados por fecha
   const grupos = [
     { id:1, group:"Grupo A", home:"México", away:"Sudáfrica", date:"Jue 11/06", time:"16:00" },
     { id:2, group:"Grupo A", home:"Corea del Sur", away:"Chequia", date:"Jue 11/06", time:"23:00" },
@@ -155,30 +149,28 @@ function generateMatches() {
     { id:71, group:"Grupo L", home:"Panamá", away:"Inglaterra", date:"Sáb 27/06", time:"18:00" },
     { id:72, group:"Grupo L", home:"Croacia", away:"Ghana", date:"Sáb 27/06", time:"18:00" },
   ];
-  grupos.forEach(p => m.push({ ...p, phase: "Fase de Grupos", result: null }));
+  grupos.forEach(p => m.push({ ...p, phase: "Fase de Grupos", result: null, hasResult: false }));
 
-  // DIECISEISAVOS — partidos 73 a 88
   const d16 = [
-    { id:73, label:"P73", matchNum:"P73", date:"Dom 28/06", time:"16:00" },
-    { id:74, label:"P74", matchNum:"P74", date:"Lun 29/06", time:"17:30" },
-    { id:75, label:"P75", matchNum:"P75", date:"Lun 29/06", time:"22:00" },
-    { id:76, label:"P76", matchNum:"P76", date:"Lun 29/06", time:"14:00" },
-    { id:77, label:"P77", matchNum:"P77", date:"Mar 30/06", time:"18:00" },
-    { id:78, label:"P78", matchNum:"P78", date:"Mar 30/06", time:"14:00" },
-    { id:79, label:"P79", matchNum:"P79", date:"Mar 30/06", time:"22:00" },
-    { id:80, label:"P80", matchNum:"P80", date:"Mié 01/07", time:"13:00" },
-    { id:81, label:"P81", matchNum:"P81", date:"Mié 01/07", time:"21:00" },
-    { id:82, label:"P82", matchNum:"P82", date:"Mié 01/07", time:"17:00" },
-    { id:83, label:"P83", matchNum:"P83", date:"Jue 02/07", time:"20:00" },
-    { id:84, label:"P84", matchNum:"P84", date:"Jue 02/07", time:"16:00" },
-    { id:85, label:"P85", matchNum:"P85", date:"Vie 03/07", time:"00:00" },
-    { id:86, label:"P86", matchNum:"P86", date:"Vie 03/07", time:"19:00" },
-    { id:87, label:"P87", matchNum:"P87", date:"Vie 03/07", time:"22:30" },
-    { id:88, label:"P88", matchNum:"P88", date:"Vie 03/07", time:"15:00" },
+    { id:73, date:"Dom 28/06", time:"16:00" },
+    { id:74, date:"Lun 29/06", time:"17:30" },
+    { id:75, date:"Lun 29/06", time:"22:00" },
+    { id:76, date:"Lun 29/06", time:"14:00" },
+    { id:77, date:"Mar 30/06", time:"18:00" },
+    { id:78, date:"Mar 30/06", time:"14:00" },
+    { id:79, date:"Mar 30/06", time:"22:00" },
+    { id:80, date:"Mié 01/07", time:"13:00" },
+    { id:81, date:"Mié 01/07", time:"21:00" },
+    { id:82, date:"Mié 01/07", time:"17:00" },
+    { id:83, date:"Jue 02/07", time:"20:00" },
+    { id:84, date:"Jue 02/07", time:"16:00" },
+    { id:85, date:"Vie 03/07", time:"00:00" },
+    { id:86, date:"Vie 03/07", time:"19:00" },
+    { id:87, date:"Vie 03/07", time:"22:30" },
+    { id:88, date:"Vie 03/07", time:"15:00" },
   ];
-  d16.forEach(p => m.push({ ...p, group:"Dieciseisavos", phase:"Dieciseisavos de Final", home: p.home || "Por definir", away: p.away || "Por definir", result: null }));
+  d16.forEach(p => m.push({ ...p, group:"Dieciseisavos", phase:"Dieciseisavos de Final", home:"Por definir", away:"Por definir", result: null, hasResult: false }));
 
-  // OCTAVOS — partidos 89 a 96
   const oct = [
     { id:89, date:"Sáb 04/07", time:"14:00" },
     { id:90, date:"Sáb 04/07", time:"18:00" },
@@ -189,39 +181,30 @@ function generateMatches() {
     { id:95, date:"Mar 07/07", time:"13:00" },
     { id:96, date:"Mar 07/07", time:"17:00" },
   ];
-  oct.forEach(p => m.push({ ...p, group:"Octavos", phase:"Octavos de Final", home:"Por definir", away:"Por definir", result: null }));
+  oct.forEach(p => m.push({ ...p, group:"Octavos", phase:"Octavos de Final", home:"Por definir", away:"Por definir", result: null, hasResult: false }));
 
-  // CUARTOS — partidos 97 a 100
   const cua = [
     { id:97, date:"Jue 09/07", time:"17:00" },
     { id:98, date:"Vie 10/07", time:"16:00" },
     { id:99, date:"Sáb 11/07", time:"18:00" },
     { id:100, date:"Sáb 11/07", time:"22:00" },
   ];
-  cua.forEach(p => m.push({ ...p, group:"Cuartos", phase:"Cuartos de Final", home:"Por definir", away:"Por definir", result: null }));
+  cua.forEach(p => m.push({ ...p, group:"Cuartos", phase:"Cuartos de Final", home:"Por definir", away:"Por definir", result: null, hasResult: false }));
 
-  // SEMIFINALES — 101 y 102
-  m.push({ id:101, group:"Semifinales", phase:"Semifinal", home:"Por definir", away:"Por definir", date:"Mar 14/07", time:"16:00", result: null });
-  m.push({ id:102, group:"Semifinales", phase:"Semifinal", home:"Por definir", away:"Por definir", date:"Mié 15/07", time:"16:00", result: null });
-
-  // 3ER PUESTO — 103
-  m.push({ id:103, group:"3er Puesto", phase:"3er y 4to Puesto", home:"Por definir", away:"Por definir", date:"Sáb 18/07", time:"18:00", result: null });
-
-  // FINAL — 104
-  m.push({ id:104, group:"Final", phase:"Final 🏆", home:"Por definir", away:"Por definir", date:"Dom 19/07", time:"16:00", result: null });
+  m.push({ id:101, group:"Semifinales", phase:"Semifinal", home:"Por definir", away:"Por definir", date:"Mar 14/07", time:"16:00", result: null, hasResult: false });
+  m.push({ id:102, group:"Semifinales", phase:"Semifinal", home:"Por definir", away:"Por definir", date:"Mié 15/07", time:"16:00", result: null, hasResult: false });
+  m.push({ id:103, group:"3er Puesto", phase:"3er y 4to Puesto", home:"Por definir", away:"Por definir", date:"Sáb 18/07", time:"18:00", result: null, hasResult: false });
+  m.push({ id:104, group:"Final", phase:"Final 🏆", home:"Por definir", away:"Por definir", date:"Dom 19/07", time:"16:00", result: null, hasResult: false });
 
   return m;
 }
 
 const BASE_MATCHES = generateMatches();
 
-// ============================================================
-// SCORING
-// ============================================================
 function calcScore(agent, matches) {
   let prode = 0, inmo = 0, dev = 0;
   matches.forEach(m => {
-    if (!m.result) return;
+    if (!matchHasResult(m)) return;
     const p = agent.predictions?.[m.id];
     if (!p) return;
     const { homeGoals: rh, awayGoals: ra } = m.result;
@@ -238,9 +221,6 @@ function calcScore(agent, matches) {
   return { prode, inmo, dev, total: prode + inmo + dev };
 }
 
-// ============================================================
-// FIREBASE HELPERS
-// ============================================================
 async function initMatchesInDB() {
   const ref = doc(db, "config", "matches");
   const snap = await getDoc(ref);
@@ -281,9 +261,6 @@ async function getOverridesFromDB() {
   } catch { return {}; }
 }
 
-// ============================================================
-// HELPERS UI
-// ============================================================
 function officeTag(office) {
   if (!office) return null;
   const cls = office.includes("Leloir") ? "tag-leloir" : office.includes("City") ? "tag-city" : "tag-on";
@@ -292,14 +269,7 @@ function officeTag(office) {
 function initials(name) {
   return (name || "?").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 }
-function teamDisplay(name) {
-  const flag = FLAGS[name] || "";
-  return `${flag} ${name}`;
-}
 
-// ============================================================
-// STYLES
-// ============================================================
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@400;600;700;900&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -370,6 +340,8 @@ select.input option{background:#1a1a1a}
 .btn-outline{background:transparent;border:1px solid rgba(212,160,23,.35);color:var(--dorado-l)}
 .btn-outline:hover{border-color:var(--dorado);background:rgba(212,160,23,.08)}
 .btn-sm{padding:6px 13px;font-size:.72rem}
+.btn-danger{background:linear-gradient(135deg,#7b1010,#a01515);color:#fff;border:none}
+.btn-danger:hover{filter:brightness(1.15)}
 .fg{margin-bottom:14px}
 .fl{font-family:'Barlow Condensed',sans-serif;font-size:.72rem;letter-spacing:2px;text-transform:uppercase;color:var(--dorado);display:block;margin-bottom:5px}
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(ellipse at 30% 20%,rgba(29,123,53,.28) 0%,transparent 55%),radial-gradient(ellipse at 70% 80%,rgba(74,168,216,.13) 0%,transparent 48%),linear-gradient(160deg,#040a04 0%,#090d09 100%)}
@@ -432,15 +404,10 @@ select.input option{background:#1a1a1a}
 }
 `;
 
-// ============================================================
-// COMPONENTS
-// ============================================================
-
 function LoadingScreen() {
   return <div className="loading"><div className="spinner"></div><div>CARGANDO PRODE...</div></div>;
 }
 
-// ---------- LOGIN ----------
 function LoginScreen({ onLogin, loading }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -486,7 +453,6 @@ function LoginScreen({ onLogin, loading }) {
   );
 }
 
-// ---------- RANKING ----------
 function RankingView({ agents, matches }) {
   const [search, setSearch] = useState("");
   const scored = agents.map(a => ({ ...a, score: calcScore(a, matches) })).sort((a, b) => b.score.total - a.score.total);
@@ -533,7 +499,6 @@ function RankingView({ agents, matches }) {
   );
 }
 
-// ---------- OFICINAS ----------
 function OfficinaView({ agents, matches }) {
   const offices = ["KW ON","KW Leloir","KW City"];
   const colors = { "KW ON":"#c0392b","KW Leloir":"#54acdb","KW City":"#d4a017" };
@@ -570,7 +535,6 @@ function OfficinaView({ agents, matches }) {
   );
 }
 
-// ---------- PRODE ----------
 function ProdeView({ agent, matches, overrides, onSave }) {
   const [preds, setPreds] = useState({...(agent.predictions||{})});
   const [saved, setSaved] = useState(false);
@@ -599,6 +563,7 @@ function ProdeView({ agent, matches, overrides, onSave }) {
             {!open && <div style={{background:"rgba(192,57,43,.12)",border:"1px solid rgba(192,57,43,.3)",borderRadius:8,padding:"8px 14px",marginBottom:10,fontSize:".8rem",color:"#ff9988",fontFamily:"Barlow Condensed",letterSpacing:1}}>🔒 Esta fase está cerrada. No se pueden cargar ni modificar pronósticos.</div>}
             {phaseMatches.map(m => {
               const isPending = m.home === "Por definir" || m.away === "Por definir";
+              const hasResult = matchHasResult(m);
               const myPred = preds[m.id];
               return (
                 <div key={m.id} className="match-card">
@@ -610,11 +575,12 @@ function ProdeView({ agent, matches, overrides, onSave }) {
                     <span className="team-nm">{m.away}</span>
                     <span>{FLAGS[m.away]||"🏳"}</span>
                   </div>
-                  {m.result ? (
+                  {/* ── CLAVE: solo bloquea cuando hasResult===true ── */}
+                  {hasResult ? (
                     <div style={{display:"flex",alignItems:"center",gap:14}}>
                       {myPred && myPred.homeGoals!==undefined && myPred.homeGoals!=="" ? (
                         <div style={{textAlign:"center"}}>
-                          <div style={{fontSize:"1.1rem",fontFamily:"Bebas Neue",color: (parseInt(myPred.homeGoals)===m.result.homeGoals && parseInt(myPred.awayGoals)===m.result.awayGoals) ? "#7dff9e" : ((parseInt(myPred.homeGoals)>parseInt(myPred.awayGoals))===(m.result.homeGoals>m.result.awayGoals) && (parseInt(myPred.homeGoals)<parseInt(myPred.awayGoals))===(m.result.homeGoals<m.result.awayGoals)) ? "#ffb347" : "rgba(255,255,255,.35)"}}>
+                          <div style={{fontSize:"1.1rem",fontFamily:"Bebas Neue",color:(parseInt(myPred.homeGoals)===m.result.homeGoals && parseInt(myPred.awayGoals)===m.result.awayGoals)?"#7dff9e":((parseInt(myPred.homeGoals)>parseInt(myPred.awayGoals))===(m.result.homeGoals>m.result.awayGoals)&&(parseInt(myPred.homeGoals)<parseInt(myPred.awayGoals))===(m.result.homeGoals<m.result.awayGoals))?"#ffb347":"rgba(255,255,255,.35)"}}>
                             {myPred.homeGoals} - {myPred.awayGoals}
                           </div>
                           <div style={{fontSize:".55rem",color:"rgba(255,255,255,.28)",fontFamily:"Barlow Condensed"}}>TU PRODE</div>
@@ -660,7 +626,6 @@ function ProdeView({ agent, matches, overrides, onSave }) {
   );
 }
 
-// ---------- MIS STATS ----------
 function MyStatsView({ agent, matches }) {
   const score = calcScore(agent, matches);
   const logroItems = Object.entries(agent.logros||{}).filter(([,v])=>v>0);
@@ -691,8 +656,63 @@ function MyStatsView({ agent, matches }) {
   );
 }
 
-// ---------- ADMIN ----------
-function AdminView({ agents, matches, overrides, onSaveResult, onSaveLogros, onDeleteAgent, onSaveOverride }) {
+// ── ResultRow con botón borrar resultado ──
+function ResultRow({ match, onSave, onClearResult }) {
+  const [h, setH] = useState(matchHasResult(match) ? match.result?.homeGoals ?? "" : "");
+  const [a, setA] = useState(matchHasResult(match) ? match.result?.awayGoals ?? "" : "");
+  const [homeTeam, setHomeTeam] = useState(match.home==="Por definir"?"":match.home);
+  const [awayTeam, setAwayTeam] = useState(match.away==="Por definir"?"":match.away);
+  const isPending = match.home==="Por definir"||match.away==="Por definir";
+
+  async function save() {
+    const newHome = homeTeam||match.home;
+    const newAway = awayTeam||match.away;
+    await onSave(match.id, {
+      ...match,
+      home: newHome, away: newAway,
+      hasResult: true,
+      result: { homeGoals: parseInt(h)||0, awayGoals: parseInt(a)||0 }
+    });
+  }
+
+  async function clear() {
+    await onClearResult(match.id, { ...match, hasResult: false, result: null });
+  }
+
+  return (
+    <div className="match-card" style={{flexWrap:"wrap",gap:10}}>
+      <div className="match-meta" style={{minWidth:90}}>{match.date}<br/>{match.time} hs</div>
+      {isPending ? (
+        <div style={{display:"flex",alignItems:"center",gap:8,flex:1,flexWrap:"wrap"}}>
+          <input className="input" style={{maxWidth:160,fontSize:".82rem",padding:"6px 10px"}} placeholder="Equipo local" value={homeTeam} onChange={e=>setHomeTeam(e.target.value)}/>
+          <span className="vs">vs</span>
+          <input className="input" style={{maxWidth:160,fontSize:".82rem",padding:"6px 10px"}} placeholder="Equipo visitante" value={awayTeam} onChange={e=>setAwayTeam(e.target.value)}/>
+        </div>
+      ) : (
+        <div className="match-teams" style={{flex:1}}>
+          <span>{FLAGS[match.home]||"🏳"}</span>
+          <span className="team-nm">{match.home}</span>
+          <span className="vs">vs</span>
+          <span className="team-nm">{match.away}</span>
+          <span>{FLAGS[match.away]||"🏳"}</span>
+        </div>
+      )}
+      <div className="score-pair">
+        <input className="score-in" type="number" min="0" value={h} onChange={e=>setH(e.target.value)} placeholder="0"/>
+        <span style={{color:"rgba(255,255,255,.35)",fontFamily:"Bebas Neue"}}>-</span>
+        <input className="score-in" type="number" min="0" value={a} onChange={e=>setA(e.target.value)} placeholder="0"/>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        <button className="btn btn-primary btn-sm" onClick={save}>{matchHasResult(match)?"✏️ Actualizar":"💾 Guardar"}</button>
+        {matchHasResult(match) && (
+          <button className="btn btn-danger btn-sm" onClick={clear} title="Borra el resultado — los agentes podrán cargar pronóstico de nuevo">🗑️ Borrar resultado</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminView({ agents, matches, overrides, onSaveResult, onClearResult, onSaveLogros, onDeleteAgent, onSaveOverride }) {
   const [tab, setTab] = useState("resultados");
   const [selAgent, setSelAgent] = useState("");
   const [logros, setLogros] = useState({});
@@ -706,10 +726,8 @@ function AdminView({ agents, matches, overrides, onSaveResult, onSaveLogros, onD
 
   function flash(m, type="ok") { setMsg(m); setMsgType(type); setTimeout(()=>setMsg(""),2500); }
 
-  async function saveResult(matchId, matchData) {
-    await onSaveResult(matchId, matchData);
-    flash("Guardado ✅");
-  }
+  async function saveResult(matchId, matchData) { await onSaveResult(matchId, matchData); flash("Guardado ✅"); }
+  async function clearResult(matchId, matchData) { await onClearResult(matchId, matchData); flash("Resultado borrado — fase abierta para pronósticos ✅"); }
   async function saveLogros() {
     if(!agent) return; setSaving(true);
     await onSaveLogros(agent.email, logros);
@@ -734,7 +752,7 @@ function AdminView({ agents, matches, overrides, onSaveResult, onSaveLogros, onD
         <div className="card-title" style={{color:"#ff9988"}}>🔐 Panel de Administración</div>
         <div style={{fontSize:".83rem",color:"rgba(255,255,255,.45)"}}>
           Agentes: <strong style={{color:"#fff"}}>{agents.length}</strong> &nbsp;·&nbsp;
-          Partidos con resultado: <strong style={{color:"#fff"}}>{matches.filter(m=>m.result).length}</strong> / {matches.length}
+          Partidos con resultado: <strong style={{color:"#fff"}}>{matches.filter(m=>matchHasResult(m)).length}</strong> / {matches.length}
         </div>
       </div>
       {msg && <div className={`alert alert-${msgType}`}>{msg}</div>}
@@ -754,7 +772,7 @@ function AdminView({ agents, matches, overrides, onSaveResult, onSaveLogros, onD
             return (
               <div key={phase} className="card">
                 <div className="card-title">{phase.includes("🏆")?"🏆":phase.includes("Semi")?"🔥":phase.includes("3er")?"🥉":phase.includes("Octavo")?"⚡":phase.includes("Cuarto")?"💥":phase.includes("Diecis")?"🎯":"⚽"} {phase}</div>
-                {pm.map(m=><ResultRow key={m.id} match={m} onSave={saveResult}/>)}
+                {pm.map(m=><ResultRow key={m.id} match={m} onSave={saveResult} onClearResult={clearResult}/>)}
               </div>
             );
           })}
@@ -849,9 +867,9 @@ function AdminView({ agents, matches, overrides, onSaveResult, onSaveLogros, onD
         <div className="card" style={{borderColor:"rgba(255,165,0,.4)",background:"linear-gradient(135deg,rgba(255,165,0,.06),rgba(8,12,8,.9))"}}>
           <div className="card-title" style={{color:"#ffb347"}}>🔓 Habilitar carga de pronósticos</div>
           <div className="alert alert-warn" style={{marginBottom:16}}>
-            Activá una fase para que los agentes puedan registrarse y cargar o editar sus pronósticos aunque la fecha límite ya pasó. <strong>Las predicciones ya cargadas no se borran.</strong> Desactivá cuando todos hayan cargado.
+            Activá una fase para que los agentes puedan cargar pronósticos aunque la fecha límite ya pasó. Desactivá cuando todos hayan cargado.
           </div>
-          {["Fase de Grupos","Dieciseisavos de Final","Octavos de Final","Cuartos de Final","Semifinal","3er y 4to Puesto","Final 🏆"].map(phase => {
+          {phases.map(phase => {
             const isActive = overrides[phase] === true;
             const deadlinePassed = !isPhaseOpen(phase, {});
             return (
@@ -860,85 +878,22 @@ function AdminView({ agents, matches, overrides, onSaveResult, onSaveLogros, onD
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,fontSize:".95rem",letterSpacing:1}}>
                     {phase}
                     {isActive && <span style={{marginLeft:10,fontSize:".7rem",color:"#ffb347",fontFamily:"Barlow Condensed",letterSpacing:1}}>● HABILITADA</span>}
-                    {!deadlinePassed && !isActive && <span style={{marginLeft:10,fontSize:".7rem",color:"#7dff9e",fontFamily:"Barlow Condensed",letterSpacing:1}}>● ABIERTA (fecha vigente)</span>}
+                    {!deadlinePassed && !isActive && <span style={{marginLeft:10,fontSize:".7rem",color:"#7dff9e",fontFamily:"Barlow Condensed",letterSpacing:1}}>● ABIERTA</span>}
                   </div>
-                  {!deadlinePassed && <div style={{fontSize:".75rem",color:"rgba(255,255,255,.35)",marginTop:3}}>Esta fase aún no venció — está abierta naturalmente</div>}
-                  {deadlinePassed && !isActive && <div style={{fontSize:".75rem",color:"rgba(255,255,255,.35)",marginTop:3}}>Cerrada automáticamente por vencimiento de fecha</div>}
+                  {deadlinePassed && !isActive && <div style={{fontSize:".75rem",color:"rgba(255,255,255,.35)",marginTop:3}}>Cerrada por vencimiento</div>}
                 </div>
-                <button
-                  className={`btn btn-sm ${isActive ? "btn-red" : "btn-gold"}`}
-                  onClick={()=>onSaveOverride(phase, !isActive)}
-                >
+                <button className={`btn btn-sm ${isActive ? "btn-red" : "btn-gold"}`} onClick={()=>onSaveOverride(phase, !isActive)}>
                   {isActive ? "🔒 Cerrar" : "🔓 Abrir"}
                 </button>
               </div>
             );
           })}
-          {Object.values(overrides).some(v=>v) && (
-            <div style={{marginTop:8}}>
-              <button className="btn btn-red btn-sm" onClick={()=>{
-                const closed = {};
-                Object.keys(overrides).forEach(k=>{closed[k]=false;});
-                ["Fase de Grupos","Dieciseisavos de Final","Octavos de Final","Cuartos de Final","Semifinal","3er y 4to Puesto","Final 🏆"].forEach(p=>{closed[p]=false;});
-                onSaveOverride("__all__", false);
-                Object.keys(overrides).forEach(k=>onSaveOverride(k,false));
-              }}>🔒 Cerrar todas las fases</button>
-            </div>
-          )}
         </div>
       )}
     </div>
   );
 }
 
-function ResultRow({ match, onSave }) {
-  const [h, setH] = useState(match.result?.homeGoals??"");
-  const [a, setA] = useState(match.result?.awayGoals??"");
-  const [homeTeam, setHomeTeam] = useState(match.home==="Por definir"?"":match.home);
-  const [awayTeam, setAwayTeam] = useState(match.away==="Por definir"?"":match.away);
-  const isPending = match.home==="Por definir"||match.away==="Por definir";
-
-  async function save() {
-    const newHome = homeTeam||match.home;
-    const newAway = awayTeam||match.away;
-    await onSave(match.id, {
-      ...match,
-      home: newHome, away: newAway,
-      result: { homeGoals:parseInt(h)||0, awayGoals:parseInt(a)||0 }
-    });
-  }
-
-  return (
-    <div className="match-card" style={{flexWrap:"wrap",gap:10}}>
-      <div className="match-meta" style={{minWidth:90}}>{match.date}<br/>{match.time} hs</div>
-      {isPending ? (
-        <div style={{display:"flex",alignItems:"center",gap:8,flex:1,flexWrap:"wrap"}}>
-          <input className="input" style={{maxWidth:160,fontSize:".82rem",padding:"6px 10px"}} placeholder="Equipo local" value={homeTeam} onChange={e=>setHomeTeam(e.target.value)}/>
-          <span className="vs">vs</span>
-          <input className="input" style={{maxWidth:160,fontSize:".82rem",padding:"6px 10px"}} placeholder="Equipo visitante" value={awayTeam} onChange={e=>setAwayTeam(e.target.value)}/>
-        </div>
-      ) : (
-        <div className="match-teams" style={{flex:1}}>
-          <span>{FLAGS[match.home]||"🏳"}</span>
-          <span className="team-nm">{match.home}</span>
-          <span className="vs">vs</span>
-          <span className="team-nm">{match.away}</span>
-          <span>{FLAGS[match.away]||"🏳"}</span>
-        </div>
-      )}
-      <div className="score-pair">
-        <input className="score-in" type="number" min="0" value={h} onChange={e=>setH(e.target.value)} placeholder="0"/>
-        <span style={{color:"rgba(255,255,255,.35)",fontFamily:"Bebas Neue"}}>-</span>
-        <input className="score-in" type="number" min="0" value={a} onChange={e=>setA(e.target.value)} placeholder="0"/>
-      </div>
-      <button className="btn btn-primary btn-sm" onClick={save}>{match.result?"✏️ Editar":"💾 Guardar"}</button>
-    </div>
-  );
-}
-
-// ============================================================
-// APP
-// ============================================================
 export default function App() {
   const [session, setSession] = useState(null);
   const [agents, setAgents] = useState([]);
@@ -984,19 +939,14 @@ export default function App() {
   }
 
   async function handleSavePred(preds) { await updateAgentField(session.email,"predictions",preds); }
-
-  async function handleSaveResult(matchId, matchData) {
-    await updateMatchInDB(matchId, matchData);
-  }
-
+  async function handleSaveResult(matchId, matchData) { await updateMatchInDB(matchId, matchData); }
+  async function handleClearResult(matchId, matchData) { await updateMatchInDB(matchId, matchData); }
   async function handleSaveLogros(email, logros) { await updateAgentField(email,"logros",logros); }
-
   async function handleSaveOverride(phase, value) {
     const newOverrides = { ...overrides, [phase]: value };
     await saveOverrideToDB(newOverrides);
     setOverrides(newOverrides);
   }
-
   async function handleDeleteAgent(email) {
     await deleteAgentFromDB(email);
     if(session?.email===email) setSession(null);
@@ -1045,7 +995,7 @@ export default function App() {
           {tab==="oficinas" && <OfficinaView agents={agents} matches={matches}/>}
           {tab==="prode" && currentAgent && <ProdeView agent={currentAgent} matches={matches} overrides={overrides} onSave={handleSavePred}/>}
           {tab==="mystats" && currentAgent && <MyStatsView agent={currentAgent} matches={matches}/>}
-          {tab==="admin" && session.isAdmin && <AdminView agents={agents} matches={matches} overrides={overrides} onSaveResult={handleSaveResult} onSaveLogros={handleSaveLogros} onDeleteAgent={handleDeleteAgent} onSaveOverride={handleSaveOverride}/>}
+          {tab==="admin" && session.isAdmin && <AdminView agents={agents} matches={matches} overrides={overrides} onSaveResult={handleSaveResult} onClearResult={handleClearResult} onSaveLogros={handleSaveLogros} onDeleteAgent={handleDeleteAgent} onSaveOverride={handleSaveOverride}/>}
         </main>
       </div>
     </>
